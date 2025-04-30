@@ -1,3 +1,4 @@
+import math
 from typing import Any, List, Tuple
 
 import gurobipy as gp
@@ -30,11 +31,13 @@ class MTSPMICP:
         depot: Tuple[float, float] = (0.0, 0.0),
         T: float = 10.0,
         vmax: float = 2.0,
+        square_side: float = 10.0,
     ) -> None:
         self.targets: List[Target] = targets
         self.depot: NDArray[np.float64] = np.array(depot, dtype=float)
         self.T: float = T
         self.vmax: float = vmax
+        self.square_side: float = square_side
         self._build_graph()
         self._build_model()
 
@@ -88,10 +91,7 @@ class MTSPMICP:
             m.addConstr(self.t[idx] <= tmax)
 
         # square area uppperbound
-        # FIXME: make this variable inputable
-        R: np.floating[Any] | np.float64 = (
-            np.linalg.norm(self.depot - np.array([10.0, 10.0])) * 2.0
-        )
+        R: float = math.sqrt(self.square_side * self.square_side * 2)
 
         # node relationship
         for i, j in self.E:
@@ -117,6 +117,7 @@ class MTSPMICP:
                 == (p_j[0] + v_j[0] * self.t[j] - v_j[0] * t_j0)
                 - (p_i[0] + v_i[0] * self.t[i] - v_i[0] * t_i0)
             )
+
             m.addConstr(
                 self.ly[(i, j)]
                 == (p_j[1] + v_j[1] * self.t[j] - v_j[1] * t_j0)
@@ -129,6 +130,11 @@ class MTSPMICP:
                 <= self.vmax * (self.t[j] - self.t[i] + self.T * (1 - self.y_e[(i, j)]))
             )
 
+            m.addConstr(self.t[j] - self.t[i] + self.T * (1 - self.y_e[(i, j)]) >= 0)
+            m.addConstr(self.t[0] == 0.0)  # initial time t_s = 0
+            m.addConstr(self.t[self.N - 1] <= self.T)  # end time t_s' <= T
+            m.addConstr(self.t[j] - self.t[i] + self.T * (1 - self.y_e[(i, j)]) >= 0)
+
             m.addConstr(self.l[(i, j)] == self.lt[(i, j)] + R * (1 - self.y_e[(i, j)]))
 
             # second conic constraints
@@ -137,14 +143,23 @@ class MTSPMICP:
                 <= self.l[(i, j)] * self.l[(i, j)]
             )
 
+            # update time
+            m.addConstr(
+                self.t[j]
+                >= self.t[i]
+                + self.lt[(i, j)]  # travel time = l_tilde
+                - self.T * (1 - self.y_e[(i, j)])
+            )
+
         self.model = m
 
     def solve(self) -> List[int]:
-        # resove model, return the idx of the nodes
+        # resove model
         self.model.optimize()
         print("Status:", self.model.status, " SolCount:", self.model.SolCount)
-        assert self.model.SolCount > 0, "There is no feasible solutions."
-        
+        assert self.model.SolCount > 0, "There is no feasible solutions!"
+
+        # return the idx list of the solutions
         tour: List[int] = [0]
         current: int = 0
         while current != self.N - 1:
