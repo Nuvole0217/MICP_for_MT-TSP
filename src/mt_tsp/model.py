@@ -53,18 +53,22 @@ class MTSPMICP:
         self.t: gp.tupledict[int, gp.Var] = m.addVars(
             self.N, lb=0.0, ub=self.T, name="t"
         )
-        self.y_e: gp.tupledict[Any, gp.Var] = m.addVars(
-            self.E, vtype=GRB.BINARY, name="y"
+        self.y_e: gp.tupledict[Tuple[Any, ...], gp.Var] = m.addVars(
+            self.E, vtype=GRB.BINARY, name="y_e"
         )
-        self.lt: gp.tupledict[Any, gp.Var] = m.addVars(self.E, lb=0.0, name="l_tilde")
-        self.lx: gp.tupledict[Any, gp.Var] = m.addVars(self.E, name="l_x")
-        self.ly: gp.tupledict[Any, gp.Var] = m.addVars(self.E, name="l_y")
-        self.l: gp.tupledict[Any, gp.Var] = m.addVars(self.E, lb=0.0, name="l")
+        self.lt: gp.tupledict[Tuple[Any, ...], gp.Var] = m.addVars(
+            self.E, lb=0.0, name="l_tilde"
+        )
+        self.lx: gp.tupledict[Tuple[Any, ...], gp.Var] = m.addVars(self.E, name="l_x")
+        self.ly: gp.tupledict[Tuple[Any, ...], gp.Var] = m.addVars(self.E, name="l_y")
+        self.l: gp.tupledict[Tuple[Any, ...], gp.Var] = m.addVars(
+            self.E, lb=0.0, name="l"
+        )
 
-        # objectives
+        # objectives (1)
         m.setObjective(gp.quicksum(self.lt[e] for e in self.E), GRB.MINIMIZE)
 
-        # flow controls
+        # flow controls for basic tsp problems (2)-(5)
         s: int = 0
         s_end: int = self.N - 1
         m.addConstr(gp.quicksum(self.y_e[(s, j)] for j in range(1, self.N)) == 1)
@@ -77,13 +81,14 @@ class MTSPMICP:
                 gp.quicksum(self.y_e[(k, j)] for j in self.nodes if j != k) == 1
             )
 
-        # time windows restrictions
+        # time windows restrictions (6)
         for idx in range(1, self.N - 1):
             tmin, tmax = self.targets[idx - 1].t_window
             m.addConstr(self.t[idx] >= tmin)
             m.addConstr(self.t[idx] <= tmax)
 
-        # tsp definition
+        # square area uppperbound
+        # FIXME: make this variable inputable
         R: np.floating[Any] | np.float64 = (
             np.linalg.norm(self.depot - np.array([10.0, 10.0])) * 2.0
         )
@@ -91,17 +96,22 @@ class MTSPMICP:
         # node relationship
         for i, j in self.E:
             if i in (s, s_end):
-                p_i, v_i, t_i0 = self.depot, np.zeros(2), 0.0
+                p_i, t_i0 = self.depot, 0.0
+                v_i = np.array([0.0, 0.0], dtype=float)
             else:
                 tgt_i = self.targets[i - 1]
-                p_i, v_i, t_i0 = tgt_i.p0, tgt_i.v, tgt_i.t_window[0]
+                p_i, t_i0 = tgt_i.p0, tgt_i.t_window[0]
+                v_i = tgt_i.v
+
             if j in (s, s_end):
-                p_j, v_j, t_j0 = self.depot, np.zeros(2), 0.0
+                p_j, t_j0 = self.depot, 0.0
+                v_j = np.array([0.0, 0.0], dtype=float)
             else:
                 tgt_j = self.targets[j - 1]
-                p_j, v_j, t_j0 = tgt_j.p0, tgt_j.v, tgt_j.t_window[0]
+                p_j, t_j0 = tgt_j.p0, tgt_j.t_window[0]
+                v_j = tgt_j.v
 
-            # position definition
+            # position definition (7)-(8)
             m.addConstr(
                 self.lx[(i, j)]
                 == (p_j[0] + v_j[0] * self.t[j] - v_j[0] * t_j0)
@@ -132,11 +142,14 @@ class MTSPMICP:
     def solve(self) -> List[int]:
         # resove model, return the idx of the nodes
         self.model.optimize()
+        print("Status:", self.model.status, " SolCount:", self.model.SolCount)
+        assert self.model.SolCount > 0, "There is no feasible solutions."
+        
         tour: List[int] = [0]
         current: int = 0
         while current != self.N - 1:
             for i, j in self.E:
-                if i == current and self.y_e[(i, j)].X > 0.5:
+                if i == current and self.y_e[(i, j)].Xn > 0.5:
                     tour.append(j)
                     current = j
                     break

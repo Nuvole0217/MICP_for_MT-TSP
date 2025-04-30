@@ -4,7 +4,7 @@ from mt_tsp.visualization import Visualizer
 
 def main() -> None:
     # give input data
-    # TODO: reading it from a config file
+    # TODO: reading targets from a config file
     targets = [
         Target("A", (0.0, 10.0), (0.3, -0.1), (1.0, 8.0)),
         Target("B", (8.0, 0.0), (-0.2, 0.3), (2.0, 9.0)),
