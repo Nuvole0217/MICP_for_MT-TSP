@@ -1,15 +1,15 @@
 [project]
-name = "MICP for MS-TSP simulation"
+name = "mt_tsp_sim"
 version = "0.1.0"
 description = "Moving-Target TSP via MICP and Gurobi"
 authors = [{name="Nuvole Nere", email="jon-lee@sjtu.edu.cn"}]
 readme = "README.md"
-requires-python = ">=3.8"
-
-[tool.pdm.dependencies]
-gurobipy = "*"
-numpy     = "*"
-matplotlib= "*"
+requires-python = ">=3.9"
+dependencies = [
+    "gurobipy>=10.0.0",
+    "numpy>=1.24.0",
+    "matplotlib>=3.6.0",
+]
 
 [build-system]
 requires = ["pdm-backend"]
