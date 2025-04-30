@@ -15,3 +15,52 @@ matplotlib= "*"
 requires = ["pdm-backend"]
 build-backend = "pdm.backend"
 
+[project.scripts]
+mt-tsp= "src.__main__:app"
+
+[tool.bandit]
+exclude_dirs = ["tests"]
+skips = ["B101"]
+
+[tool.pdm]
+distribution = true
+
+[tool.pdm.dev-dependencies]
+lint = ["black>=24.10.0", "mypy>=1.12.0", "types-PyYAML>=6.0.12.20240917"]
+test = ["pytest>=8.3.3", "pytest-cov>=5.0.0"]
+dev = ["pre-commit>=4.0.1"]
+
+[tool.pdm.scripts]
+lint = "mypy joj3_config_generator tests"
+test = "pytest"
+coverage = "pytest --cov=joj3_config_generator --cov-report=xml --cov-report=html"
+all = { composite = ["lint", "test"] }
+app.call = "joj3_config_generator.main:app"
+
+[tool.pdm.build]
+includes = ["joj3_config_generator"]
+excludes = ["tests"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+xfail_strict=true
+
+[tool.mypy]
+plugins = ["pydantic.mypy"]
+
+follow_imports = "silent"
+warn_redundant_casts = true
+warn_unused_ignores = true
+disallow_any_generics = true
+check_untyped_defs = true
+no_implicit_reexport = true
+disable_error_code = "import-untyped"
+
+disallow_untyped_defs = true
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true
+warn_untyped_fields = true
+
