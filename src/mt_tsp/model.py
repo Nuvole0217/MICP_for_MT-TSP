@@ -1,8 +1,9 @@
-from typing import List, Tuple
+from typing import Any, List, Tuple
 
 import gurobipy as gp
 import numpy as np
 from gurobipy import GRB
+from numpy.typing import NDArray
 
 
 class Target:
@@ -14,11 +15,11 @@ class Target:
         t_window: Tuple[float, float],
     ) -> None:
         self.name: str = name
-        self.p0: np.ndarray = np.array(p0, dtype=float)
-        self.v: np.ndarray = np.array(v, dtype=float)
+        self.p0: NDArray[np.float64] = np.array(p0, dtype=float)
+        self.v: NDArray[np.float64] = np.array(v, dtype=float)
         self.t_window: Tuple[float, float] = t_window
 
-    def position(self, t: float) -> np.ndarray:
+    def position(self, t: float) -> NDArray[np.float64]:
         return self.p0 + self.v * t
 
 
@@ -31,7 +32,7 @@ class MTSPMICP:
         vmax: float = 2.0,
     ) -> None:
         self.targets: List[Target] = targets
-        self.depot: np.ndarray = np.array(depot, dtype=float)
+        self.depot: NDArray[np.float64] = np.array(depot, dtype=float)
         self.T: float = T
         self.vmax: float = vmax
         self._build_graph()
@@ -39,7 +40,7 @@ class MTSPMICP:
 
     def _build_graph(self) -> None:
         self.n_targets: int = len(self.targets)
-        self.N: int = self.n_targets + 2  # 0=s, 1..n targets, n+1=s_end
+        self.N: int = self.n_targets + 2  # 0=s, 1..n targets, n+1=s'
         self.nodes: List[int] = list(range(self.N))
         self.E: List[Tuple[int, int]] = [
             (i, j) for i in self.nodes for j in self.nodes if i != j
@@ -49,12 +50,16 @@ class MTSPMICP:
         m: gp.Model = gp.Model("MT-TSP-MICP")
 
         # decision variables
-        self.t: gp.tupledict = m.addVars(self.N, lb=0.0, ub=self.T, name="t")
-        self.y: gp.tupledict = m.addVars(self.E, vtype=GRB.BINARY, name="y")
-        self.lt: gp.tupledict = m.addVars(self.E, lb=0.0, name="l_tilde")
-        self.lx: gp.tupledict = m.addVars(self.E, name="l_x")
-        self.ly: gp.tupledict = m.addVars(self.E, name="l_y")
-        self.l: gp.tupledict = m.addVars(self.E, lb=0.0, name="l")
+        self.t: gp.tupledict[int, gp.Var] = m.addVars(
+            self.N, lb=0.0, ub=self.T, name="t"
+        )
+        self.y_e: gp.tupledict[Any, gp.Var] = m.addVars(
+            self.E, vtype=GRB.BINARY, name="y"
+        )
+        self.lt: gp.tupledict[Any, gp.Var] = m.addVars(self.E, lb=0.0, name="l_tilde")
+        self.lx: gp.tupledict[Any, gp.Var] = m.addVars(self.E, name="l_x")
+        self.ly: gp.tupledict[Any, gp.Var] = m.addVars(self.E, name="l_y")
+        self.l: gp.tupledict[Any, gp.Var] = m.addVars(self.E, lb=0.0, name="l")
 
         # objectives
         m.setObjective(gp.quicksum(self.lt[e] for e in self.E), GRB.MINIMIZE)
@@ -62,11 +67,15 @@ class MTSPMICP:
         # flow controls
         s: int = 0
         s_end: int = self.N - 1
-        m.addConstr(gp.quicksum(self.y[(s, j)] for j in range(1, self.N)) == 1)
-        m.addConstr(gp.quicksum(self.y[(i, s_end)] for i in range(self.N - 1)) == 1)
+        m.addConstr(gp.quicksum(self.y_e[(s, j)] for j in range(1, self.N)) == 1)
+        m.addConstr(gp.quicksum(self.y_e[(i, s_end)] for i in range(self.N - 1)) == 1)
         for k in range(1, self.N - 1):
-            m.addConstr(gp.quicksum(self.y[(i, k)] for i in self.nodes if i != k) == 1)
-            m.addConstr(gp.quicksum(self.y[(k, j)] for j in self.nodes if j != k) == 1)
+            m.addConstr(
+                gp.quicksum(self.y_e[(i, k)] for i in self.nodes if i != k) == 1
+            )
+            m.addConstr(
+                gp.quicksum(self.y_e[(k, j)] for j in self.nodes if j != k) == 1
+            )
 
         # time windows restrictions
         for idx in range(1, self.N - 1):
@@ -75,7 +84,9 @@ class MTSPMICP:
             m.addConstr(self.t[idx] <= tmax)
 
         # tsp definition
-        R: float = np.linalg.norm(self.depot - np.array([10.0, 10.0])) * 2.0
+        R: np.floating[Any] | np.float64 = (
+            np.linalg.norm(self.depot - np.array([10.0, 10.0])) * 2.0
+        )
 
         # node relationship
         for i, j in self.E:
@@ -105,10 +116,10 @@ class MTSPMICP:
             # time feasibility
             m.addConstr(
                 self.lt[(i, j)]
-                <= self.vmax * (self.t[j] - self.t[i] + self.T * (1 - self.y[(i, j)]))
+                <= self.vmax * (self.t[j] - self.t[i] + self.T * (1 - self.y_e[(i, j)]))
             )
 
-            m.addConstr(self.l[(i, j)] == self.lt[(i, j)] + R * (1 - self.y[(i, j)]))
+            m.addConstr(self.l[(i, j)] == self.lt[(i, j)] + R * (1 - self.y_e[(i, j)]))
 
             # second conic constraints
             m.addQConstr(
@@ -125,7 +136,7 @@ class MTSPMICP:
         current: int = 0
         while current != self.N - 1:
             for i, j in self.E:
-                if i == current and self.y[(i, j)].X > 0.5:
+                if i == current and self.y_e[(i, j)].X > 0.5:
                     tour.append(j)
                     current = j
                     break

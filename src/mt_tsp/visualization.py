@@ -1,8 +1,12 @@
-from typing import List, Any
-import numpy as np
+from typing import Any, List
+
 import matplotlib.pyplot as plt
+import numpy as np
 from matplotlib.animation import FuncAnimation, PillowWriter
+from numpy.typing import NDArray
+
 from mt_tsp.model import MTSPMICP
+
 
 class Visualizer:
     def __init__(
@@ -10,17 +14,17 @@ class Visualizer:
         model: MTSPMICP,
         gif_path: str = "mt_tsp.gif",
         fps: int = 10,
-        frames: int = 100
+        frames: int = 100,
     ) -> None:
         self.model: MTSPMICP = model
         self.gif_path: str = gif_path
         self.fps: int = fps
-        self.times: np.ndarray = np.linspace(0.0, model.T, frames)
+        self.times: NDArray[np.floating] = np.linspace(0.0, model.T, frames)
 
     def animate(self) -> None:
         fig, ax = plt.subplots()
         ax.set(xlim=(-5, 15), ylim=(-5, 15))
-        agent_dot, = ax.plot([], [], "ro", label="Agent")
+        (agent_dot,) = ax.plot([], [], "ro", label="Agent")
         target_dots: List[Any] = [
             ax.plot([], [], "bo", label=f"Target {t.name}")[0]
             for t in self.model.targets
@@ -43,8 +47,7 @@ class Visualizer:
             return [agent_dot] + target_dots
 
         anim = FuncAnimation(
-            fig, update, frames=len(self.times),
-            init_func=init, blit=True
+            fig, update, frames=len(self.times), init_func=init, blit=True
         )
         writer = PillowWriter(fps=self.fps)
         anim.save(self.gif_path, writer=writer)
