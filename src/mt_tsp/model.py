@@ -62,8 +62,8 @@ class MTSPMICP:
         self.lt: gp.tupledict[Tuple[Any, ...], gp.Var] = m.addVars(
             self.E, lb=0.0, name="l_tilde"
         )
-        self.lx: gp.tupledict[Tuple[Any, ...], gp.Var] = m.addVars(self.E, name="l_x")
-        self.ly: gp.tupledict[Tuple[Any, ...], gp.Var] = m.addVars(self.E, name="l_y")
+        self.lx: gp.tupledict[Tuple[Any, ...], gp.Var] = m.addVars(self.E,lb=-GRB.INFINITY, name="l_x")
+        self.ly: gp.tupledict[Tuple[Any, ...], gp.Var] = m.addVars(self.E,lb=-GRB.INFINITY, name="l_y")
         self.l: gp.tupledict[Tuple[Any, ...], gp.Var] = m.addVars(
             self.E, lb=0.0, name="l"
         )
@@ -74,9 +74,9 @@ class MTSPMICP:
         # flow controls for basic tsp problems (2)-(5)
         s: int = 0
         s_end: int = self.N - 1
-        m.addConstr(gp.quicksum(self.y_e[(s, j)] for j in range(1, self.N)) == 1)
-        m.addConstr(gp.quicksum(self.y_e[(i, s_end)] for i in range(self.N - 1)) == 1)
-        for k in range(1, self.N - 1):
+        m.addConstr(gp.quicksum(self.y_e[(s, j)] for j in range(1, s_end)) == 1)
+        m.addConstr(gp.quicksum(self.y_e[(i, s_end)] for i in range(1, s_end)) == 1)
+        for k in range(1, s_end):
             m.addConstr(
                 gp.quicksum(self.y_e[(i, k)] for i in self.nodes if i != k) == 1
             )
@@ -91,7 +91,7 @@ class MTSPMICP:
             m.addConstr(self.t[idx] <= tmax)
 
         # square area uppperbound
-        R: float = math.sqrt(self.square_side * self.square_side * 2)
+        R: float = math.sqrt(self.square_side ** 2 * 2)
 
         # node relationship
         for i, j in self.E:
@@ -130,25 +130,16 @@ class MTSPMICP:
                 <= self.vmax * (self.t[j] - self.t[i] + self.T * (1 - self.y_e[(i, j)]))
             )
 
-            m.addConstr(self.t[j] - self.t[i] + self.T * (1 - self.y_e[(i, j)]) >= 0)
             m.addConstr(self.t[0] == 0.0)  # initial time t_s = 0
+            m.addConstr(self.t[self.N - 1] >= 0)
             m.addConstr(self.t[self.N - 1] <= self.T)  # end time t_s' <= T
-            m.addConstr(self.t[j] - self.t[i] + self.T * (1 - self.y_e[(i, j)]) >= 0)
 
             m.addConstr(self.l[(i, j)] == self.lt[(i, j)] + R * (1 - self.y_e[(i, j)]))
 
             # second conic constraints
             m.addQConstr(
-                self.lx[(i, j)] * self.lx[(i, j)] + self.ly[(i, j)] * self.ly[(i, j)]
-                <= self.l[(i, j)] * self.l[(i, j)]
-            )
-
-            # update time
-            m.addConstr(
-                self.t[j]
-                >= self.t[i]
-                + self.lt[(i, j)]  # travel time = l_tilde
-                - self.T * (1 - self.y_e[(i, j)])
+                self.lx[(i, j)] ** 2 + self.ly[(i, j)] ** 2
+                <= (self.lt[(i, j)] + R * (1 - self.y_e[(i, j)])) ** 2
             )
 
         self.model = m
@@ -156,6 +147,10 @@ class MTSPMICP:
     def solve(self) -> List[int]:
         # resove model
         self.model.optimize()
+        self.model.write("model.lp")
+        if self.model.status == GRB.INFEASIBLE:
+            self.model.computeIIS()
+            self.model.write("infeasible.ilp")
         print("Status:", self.model.status, " SolCount:", self.model.SolCount)
         assert self.model.SolCount > 0, "There is no feasible solutions!"
 
