@@ -1,8 +1,10 @@
-from typing import Any, List
+from typing import List, Tuple, Any
 
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.animation import FuncAnimation, PillowWriter
+from matplotlib.patches import Arrow
+from matplotlib.text import Annotation
 from numpy.typing import NDArray
 
 from mt_tsp.model import MTSPMICP
@@ -14,41 +16,198 @@ class Visualizer:
         model: MTSPMICP,
         gif_path: str = "mt_tsp.gif",
         fps: int = 10,
-        frames: int = 100,
+        frames: int = 1000,
+        speed_arrow_scale: float = 3,
     ) -> None:
-        self.model: MTSPMICP = model
-        self.gif_path: str = gif_path
-        self.fps: int = fps
-        self.times: NDArray[np.floating] = np.linspace(0.0, model.T, frames)
+        # 基本参数
+        self.model = model
+        self.gif_path = gif_path
+        self.fps = fps
+        self.speed_arrow_scale = speed_arrow_scale
+        self.times: NDArray[np.float64] = np.linspace(0.0, model.T, frames)
 
-    def animate(self) -> None:
-        fig, ax = plt.subplots()
-        ax.set(xlim=(-5, 15), ylim=(-5, 15))
-        (agent_dot,) = ax.plot([], [], "ro", label="Agent")
-        target_dots: List[Any] = [
-            ax.plot([], [], "bo", label=f"Target {t.name}")[0]
-            for t in self.model.targets
+        self.tour: List[int] = model.tour
+        self.agent_time_points: List[float] = [
+            model.t[i].Xn for i in self.tour
         ]
 
+        # visualization parameters
+        self.target_colors = plt.cm.tab10(np.linspace(0, 1, len(model.targets)))
+        self.agent_color = "#E64A19"  # Material Orange 700
+        self.path_color = "#616161"  # Material Grey 700
+        self.arrow_color = "#37474F"  # Material Blue Grey 800
+
+    def _get_path_segments(self) -> List[Tuple[float, float, NDArray[np.float64], NDArray[np.float64]]]:
+        segments = []
+        for i in range(len(self.tour) - 1):
+            from_node = self.tour[i]
+            to_node = self.tour[i + 1]
+            t_start = self.agent_time_points[i]
+            t_end = self.agent_time_points[i + 1]
+
+            if from_node == 0:
+                start_pos = self.model.depot
+            else:
+                target = self.model.targets[from_node - 1]
+                start_pos = target.position(t_start)
+
+            if to_node == self.model.N - 1:
+                end_pos = self.model.depot
+            else:
+                target = self.model.targets[to_node - 1]
+                end_pos = target.position(t_end)
+
+            segments.append((t_start, t_end, np.array(start_pos), np.array(end_pos)))
+        return segments
+
+    def _get_agent_pos(self, t: float) -> Tuple[float, float]:
+        for t_start, t_end, start_pos, end_pos in self._get_path_segments():
+            if t_start <= t <= t_end:
+                ratio = (t - t_start) / (t_end - t_start) if t_end > t_start else 0.0
+                x = start_pos[0] + (end_pos[0] - start_pos[0]) * ratio
+                y = start_pos[1] + (end_pos[1] - start_pos[1]) * ratio
+                return (x, y)
+        return tuple(self.model.depot)  # type: ignore
+
+    def animate(self) -> None:
+        fig, ax = plt.subplots(figsize=(10, 8), dpi=100)
+        ax.set(
+            xlim=(0, self.model.square_side * 1.5),
+            ylim=(0, self.model.square_side * 1.5),
+            title=f"MT-TSP Solution (vmax={self.model.vmax})",
+            xlabel="X Coordinate",
+            ylabel="Y Coordinate",
+        )
+        ax.grid(True, alpha=0.3)
+
+        agent_dot = ax.plot(
+            [],
+            [],
+            "o",
+            color=self.agent_color,
+            markersize=14,
+            markeredgewidth=2,
+            markeredgecolor="white",
+            label="Agent",
+        )[0]
+
+        target_dots: List[Any] = []
+        target_labels: List[Annotation] = []
+        speed_arrows: List[Arrow] = []
+
+        for i, tgt in enumerate(self.model.targets):
+            # target dots
+            dot = ax.plot(
+                [],
+                [],
+                "o",
+                color=self.target_colors[i],
+                markersize=12,
+                alpha=0.9,
+                label=f"Target {tgt.name}",
+            )[0]
+            target_dots.append(dot)
+
+            # target labels
+            label = ax.annotate(
+                tgt.name,
+                xy=(0, 0),
+                xytext=(8, 8),
+                textcoords="offset points",
+                color=self.target_colors[i],
+                weight="bold",
+            )
+            target_labels.append(label)
+
+            # speed arrows
+            arrow = Arrow(0, 0, 0, 0, width=0.3, color=self.arrow_color, alpha=0.7)
+            ax.add_patch(arrow)
+            speed_arrows.append(arrow)
+
+        # path elements
+        path_line = ax.plot(
+            [],
+            [],
+            "--",
+            color=self.path_color,
+            linewidth=2,
+            alpha=0.7,
+            label="Agent Path",
+        )[0]
+
+        ax.legend(loc="upper right", frameon=True, shadow=True)
+
+        # define the animation
         def init() -> List[Any]:
             agent_dot.set_data([], [])
             for dot in target_dots:
                 dot.set_data([], [])
-            return [agent_dot] + target_dots
+            for label in target_labels:
+                label.set_position((-100, -100))
+            for arrow in speed_arrows:
+                arrow.set_data(x=0, y=0, width=0)
+            path_line.set_data([], [])
+            return (
+                [agent_dot] + target_dots + target_labels + speed_arrows + [path_line]
+            )
 
         def update(frame: int) -> List[Any]:
             t = self.times[frame]
-            # update accordinbg to timeframe
-            for dot, tgt in zip(target_dots, self.model.targets):
-                pos = tgt.position(t)
-                dot.set_data(pos[0], pos[1])
-            # update agent position
-            agent_dot.set_data(self.model.depot[0], self.model.depot[1])
-            return [agent_dot] + target_dots
 
+            # udapte target objects
+            updates: List[Any] = []
+            for i, tgt in enumerate(self.model.targets):
+                # currentt posistion
+                pos = tgt.position(t)
+                target_dots[i].set_data([pos[0]], [pos[1]])
+
+                # position label
+                target_labels[i].set_position((pos[0], pos[1]))
+
+                # show arrows
+                if np.linalg.norm(tgt.v) > 1e-3:
+                    dx = tgt.v[0] * self.speed_arrow_scale
+                    dy = tgt.v[1] * self.speed_arrow_scale
+                    speed_arrows[i].set_data(pos[0], pos[1], dx, dy, width=0.3)
+                else:
+                    speed_arrows[i].set_data(0, 0, 0, 0, 0)
+
+                updates.extend([target_dots[i], target_labels[i], speed_arrows[i]])
+
+            # udapte position
+            agent_pos = self._get_agent_pos(t)
+            agent_dot.set_data([agent_pos[0]], [agent_pos[1]])
+            updates.append(agent_dot)
+            
+            path_x, path_y = [], []
+            for seg in self._get_path_segments():
+                if seg[1] <= t: # already taken time
+                    path_x.extend([seg[2][0], seg[3][0]])
+                    path_y.extend([seg[2][1], seg[3][1]])
+            path_line.set_data(path_x, path_y)
+            updates.append(path_line)
+
+            return updates
+
+
+        # generate the image
         anim = FuncAnimation(
-            fig, update, frames=len(self.times), init_func=init, blit=True
+            fig,
+            update,
+            frames=len(self.times),
+            init_func=init,
+            blit=True,
+            interval=50,
+            repeat=False,
         )
-        writer = PillowWriter(fps=self.fps)
-        anim.save(self.gif_path, writer=writer)
-        plt.close(fig)
+
+        print(f"Generating {self.gif_path}...")
+        anim.save(
+            self.gif_path,
+            writer=PillowWriter(fps=self.fps),
+            progress_callback=lambda i, n: print(
+                f"Rendering frame {i+1}/{n}", end="\r"
+            ),
+        )
+        plt.close()
+        print("\nAnimation saved successfully!")

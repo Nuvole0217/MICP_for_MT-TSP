@@ -1,8 +1,8 @@
 \ Model MT-TSP-MICP_copy
 \ LP format - for model browsing. Use MPS format to capture full model detail.
 Minimize
- 
+
 Subject To
- R32: l_y[1,0] = -10
+ R43: l_y[1,0] = -10
 Bounds
 End

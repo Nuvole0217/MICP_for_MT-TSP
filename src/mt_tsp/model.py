@@ -38,6 +38,8 @@ class MTSPMICP:
         self.T: float = T
         self.vmax: float = vmax
         self.square_side: float = square_side
+        self.tour: List[int] = []
+        self.agent_time_points: List[float] = []
         self._build_graph()
         self._build_model()
 
@@ -62,8 +64,12 @@ class MTSPMICP:
         self.lt: gp.tupledict[Tuple[Any, ...], gp.Var] = m.addVars(
             self.E, lb=0.0, name="l_tilde"
         )
-        self.lx: gp.tupledict[Tuple[Any, ...], gp.Var] = m.addVars(self.E,lb=-GRB.INFINITY, name="l_x")
-        self.ly: gp.tupledict[Tuple[Any, ...], gp.Var] = m.addVars(self.E,lb=-GRB.INFINITY, name="l_y")
+        self.lx: gp.tupledict[Tuple[Any, ...], gp.Var] = m.addVars(
+            self.E, lb=-GRB.INFINITY, name="l_x"
+        )
+        self.ly: gp.tupledict[Tuple[Any, ...], gp.Var] = m.addVars(
+            self.E, lb=-GRB.INFINITY, name="l_y"
+        )
         self.l: gp.tupledict[Tuple[Any, ...], gp.Var] = m.addVars(
             self.E, lb=0.0, name="l"
         )
@@ -91,7 +97,7 @@ class MTSPMICP:
             m.addConstr(self.t[idx] <= tmax)
 
         # square area uppperbound
-        R: float = math.sqrt(self.square_side ** 2 * 2)
+        R: float = math.sqrt(self.square_side**2 * 2)
 
         # node relationship
         for i, j in self.E:
@@ -163,4 +169,8 @@ class MTSPMICP:
                     tour.append(j)
                     current = j
                     break
+        self.tour = tour
+        self.agent_time_points = [self.t[i].Xn for i in tour]
+        assert len(tour) > 0, "There is no feasible solutions, no output for tour!"
+        assert len(tour) == len(self.agent_time_points), "Time point mismatch!"
         return tour
