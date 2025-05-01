@@ -19,7 +19,6 @@ class Visualizer:
         frames: int = 1000,
         speed_arrow_scale: float = 3,
     ) -> None:
-        # 基本参数
         self.model = model
         self.gif_path = gif_path
         self.fps = fps
@@ -92,7 +91,6 @@ class Visualizer:
         )[0]
 
         target_dots: List[Any] = []
-        target_labels: List[Annotation] = []
         speed_arrows: List[Arrow] = []
 
         for i, tgt in enumerate(self.model.targets):
@@ -107,17 +105,6 @@ class Visualizer:
                 label=f"Target {tgt.name}",
             )[0]
             target_dots.append(dot)
-
-            # target labels
-            label = ax.annotate(
-                tgt.name,
-                xy=(0, 0),
-                xytext=(8, 8),
-                textcoords="offset points",
-                color=self.target_colors[i],
-                weight="bold",
-            )
-            target_labels.append(label)
 
             # speed arrows
             arrow = Arrow(0, 0, 0, 0, width=0.3, color=self.arrow_color, alpha=0.7)
@@ -142,13 +129,11 @@ class Visualizer:
             agent_dot.set_data([], [])
             for dot in target_dots:
                 dot.set_data([], [])
-            for label in target_labels:
-                label.set_position((-100, -100))
             for arrow in speed_arrows:
                 arrow.set_data(x=0, y=0, width=0)
             path_line.set_data([], [])
             return (
-                [agent_dot] + target_dots + target_labels + speed_arrows + [path_line]
+                [agent_dot] + target_dots + speed_arrows + [path_line]
             )
 
         def update(frame: int) -> List[Any]:
@@ -161,9 +146,6 @@ class Visualizer:
                 pos = tgt.position(t)
                 target_dots[i].set_data([pos[0]], [pos[1]])
 
-                # position label
-                target_labels[i].set_position((pos[0], pos[1]))
-
                 # show arrows
                 if np.linalg.norm(tgt.v) > 1e-3:
                     dx = tgt.v[0] * self.speed_arrow_scale
@@ -172,13 +154,13 @@ class Visualizer:
                 else:
                     speed_arrows[i].set_data(0, 0, 0, 0, 0)
 
-                updates.extend([target_dots[i], target_labels[i], speed_arrows[i]])
+                updates.extend([target_dots[i], speed_arrows[i]])
 
             # udapte position
             agent_pos = self._get_agent_pos(t)
             agent_dot.set_data([agent_pos[0]], [agent_pos[1]])
             updates.append(agent_dot)
-            
+
             path_x, path_y = [], []
             for seg in self._get_path_segments():
                 if seg[1] <= t: # already taken time
@@ -188,7 +170,6 @@ class Visualizer:
             updates.append(path_line)
 
             return updates
-
 
         # generate the image
         anim = FuncAnimation(
