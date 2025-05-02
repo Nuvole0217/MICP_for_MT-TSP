@@ -6,8 +6,10 @@ __pycache__/
 
 # C extensions
 *.so
-*/*.ilp
-*/*.lp
+
+# gurobi logs
+*.ilp
+*.lp
 
 # Distribution / packaging
 .Python

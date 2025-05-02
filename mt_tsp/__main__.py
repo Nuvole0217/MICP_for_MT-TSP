@@ -1,46 +1,45 @@
-import typer
-from pathlib import Path
-from typing_extensions import Annotated
-from src.mt_tsp.model import MTSPMICP, Target
-from src.mt_tsp.visualization import Visualizer
-from typing import List
 import json
-import tomllib
+import tomli
+from pathlib import Path
+from typing import List
+
+import typer
+from typing_extensions import Annotated
+
+from mt_tsp.model import MTSPMICP, Target
+from mt_tsp.visualization import Visualizer
 
 app = typer.Typer(add_completion=False)
+
 
 @app.command()
 def run(
     target_path: Annotated[
         Path,
-        typer.Argument (
-            help="Path to the targets file in JSON format."
-        ),
+        typer.Argument(help="Path to the targets file in JSON format."),
     ] = Path("."),
     agent_path: Annotated[
         Path,
-        typer.Argument (
-            help="Path to the agent configuration file in toml format."
-        ),
+        typer.Argument(help="Path to the agent configuration file in toml format."),
     ] = Path("."),
 ) -> None:
-    with open(target_path, "r", encoding='utf-8') as f:
+    with open(target_path, encoding="utf-8") as f:
         target_data = json.load(f)
-        
+
     with open(agent_path, "rb") as g:
-        agent_data = tomllib.load(g)
-    
+        agent_data = tomli.load(g)
+
     targets: List[Target] = []
     for key, data in target_data.items():
         targets.append(
             Target(
                 name=key,
-                p0=(data["px"], data['py']),
+                p0=(data["px"], data["py"]),
                 v=(data["vx"], data["vy"]),
                 t_window=(data["tmin"], data["tmax"]),
             )
         )
-    model=MTSPMICP(
+    model = MTSPMICP(
         targets=targets,
         depot=(agent_data["depot"]["px"], agent_data["depot"]["py"]),
         T=agent_data["param"]["T"],

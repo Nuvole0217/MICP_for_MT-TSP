@@ -6,7 +6,7 @@ from matplotlib.animation import FuncAnimation, PillowWriter
 from matplotlib.patches import Arrow
 from numpy.typing import NDArray
 
-from src.mt_tsp.model import MTSPMICP
+from mt_tsp.model import MTSPMICP
 
 
 class Visualizer:

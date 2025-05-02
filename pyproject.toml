@@ -7,8 +7,10 @@ readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
     "gurobipy>=10.0.0",
-    "numpy>=1.24.0",
-    "matplotlib>=3.6.0",
+    "numpy>=2.0.2",
+    "matplotlib>=3.9.4",
+    "jsonschema>=4.0.0",
+    "tomli>=2.2.0",
 ]
 
 [build-system]
@@ -16,7 +18,7 @@ requires = ["pdm-backend"]
 build-backend = "pdm.backend"
 
 [project.scripts]
-mt-tsp= "src.mt-tsp.__main__:app"
+mt-tsp= "mt-tsp.__main__:app"
 
 [tool.bandit]
 exclude_dirs = ["tests"]
