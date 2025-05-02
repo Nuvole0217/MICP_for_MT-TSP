@@ -22,7 +22,7 @@ class Visualizer:
         self.gif_path = gif_path
         self.fps = fps
         self.speed_arrow_scale = speed_arrow_scale
-        self.times: NDArray[np.float64] = np.linspace(0.0, model.T, frames)  # type: ignore
+        self.times: NDArray[np.float64] = np.linspace(0.0, model.T, frames)
 
         self.tour: List[int] = model.tour
         self.agent_time_points: List[float] = [model.t[i].Xn for i in self.tour]
@@ -70,8 +70,8 @@ class Visualizer:
     def animate(self) -> None:
         fig, ax = plt.subplots(figsize=(10, 8), dpi=100)
         ax.set(
-            xlim=(0, self.model.square_side * 1.5),
-            ylim=(0, self.model.square_side * 1.5),
+            xlim=(-self.model.square_side, self.model.square_side ),
+            ylim=(-self.model.square_side, self.model.square_side ),
             title=f"MT-TSP Solution (vmax={self.model.vmax})",
             xlabel="X Coordinate",
             ylabel="Y Coordinate",

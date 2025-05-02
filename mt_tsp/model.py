@@ -144,8 +144,7 @@ class MTSPMICP:
 
             # second conic constraints
             m.addQConstr(
-                self.lx[(i, j)] ** 2 + self.ly[(i, j)] ** 2
-                <= (self.lt[(i, j)] + R * (1 - self.y_e[(i, j)])) ** 2
+                self.lx[(i, j)] ** 2 + self.ly[(i, j)] ** 2 <= self.l[(i, j)] ** 2
             )
 
         self.model = m

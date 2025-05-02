@@ -1,8 +1,8 @@
 import json
-import tomli
 from pathlib import Path
 from typing import List
 
+import tomli
 import typer
 from typing_extensions import Annotated
 
