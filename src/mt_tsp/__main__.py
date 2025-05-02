@@ -13,7 +13,7 @@ def main() -> None:
         Target("E", (2.0, 2.0), (0.1, 0.1), (0.0, 100.0)),
         Target("F", (3.0, 3.0), (0.2, 0.3), (0.0, 1000.0)),
     ]
-    model = MTSPMICP(targets, depot=(0.0, 0.0), T=1000.0, vmax=0.5, square_side=10.0)
+    model = MTSPMICP(targets, depot=(10.0, 10.0), T=1000.0, vmax=0.5, square_side=10.0)
     tour = model.solve()
     print("Tour:", tour)
     viz = Visualizer(model, gif_path="mt_tsp.gif", fps=10, frames=1000)

@@ -1,10 +1,9 @@
-from typing import List, Tuple, Any
+from typing import Any, List, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.animation import FuncAnimation, PillowWriter
 from matplotlib.patches import Arrow
-from matplotlib.text import Annotation
 from numpy.typing import NDArray
 
 from mt_tsp.model import MTSPMICP
@@ -26,9 +25,7 @@ class Visualizer:
         self.times: NDArray[np.float64] = np.linspace(0.0, model.T, frames)
 
         self.tour: List[int] = model.tour
-        self.agent_time_points: List[float] = [
-            model.t[i].Xn for i in self.tour
-        ]
+        self.agent_time_points: List[float] = [model.t[i].Xn for i in self.tour]
 
         # visualization parameters
         self.target_colors = plt.cm.tab10(np.linspace(0, 1, len(model.targets)))
@@ -36,7 +33,9 @@ class Visualizer:
         self.path_color = "#616161"  # Material Grey 700
         self.arrow_color = "#37474F"  # Material Blue Grey 800
 
-    def _get_path_segments(self) -> List[Tuple[float, float, NDArray[np.float64], NDArray[np.float64]]]:
+    def _get_path_segments(
+        self,
+    ) -> List[Tuple[float, float, NDArray[np.float64], NDArray[np.float64]]]:
         segments = []
         for i in range(len(self.tour) - 1):
             from_node = self.tour[i]
@@ -66,7 +65,7 @@ class Visualizer:
                 x = start_pos[0] + (end_pos[0] - start_pos[0]) * ratio
                 y = start_pos[1] + (end_pos[1] - start_pos[1]) * ratio
                 return (x, y)
-        return tuple(self.model.depot)  # type: ignore
+        return (self.model.depot[0], self.model.depot[1])
 
     def animate(self) -> None:
         fig, ax = plt.subplots(figsize=(10, 8), dpi=100)
@@ -132,9 +131,7 @@ class Visualizer:
             for arrow in speed_arrows:
                 arrow.set_data(x=0, y=0, width=0)
             path_line.set_data([], [])
-            return (
-                [agent_dot] + target_dots + speed_arrows + [path_line]
-            )
+            return [agent_dot] + target_dots + speed_arrows + [path_line]
 
         def update(frame: int) -> List[Any]:
             t = self.times[frame]
@@ -162,10 +159,33 @@ class Visualizer:
             updates.append(agent_dot)
 
             path_x, path_y = [], []
+            last_seg: Tuple[float, float, NDArray[np.float64], NDArray[np.float64]] = (
+                0,
+                0,
+                np.array(agent_pos),
+                np.array(agent_pos),
+            )
+            first_seg: Tuple[float, float, NDArray[np.float64], NDArray[np.float64]] = (
+                0,
+                0,
+                np.array(agent_pos),
+                np.array(agent_pos),
+            )
             for seg in self._get_path_segments():
-                if seg[1] <= t: # already taken time
+                if seg[1] <= t:  # already taken time
                     path_x.extend([seg[2][0], seg[3][0]])
                     path_y.extend([seg[2][1], seg[3][1]])
+                    if seg[0] >= last_seg[0]:
+                        last_seg = seg
+                if seg[0] == 0:
+                    first_seg = seg
+
+            if first_seg[1] >= t:
+                path_x.extend([first_seg[2][0], agent_pos[0]])
+                path_y.extend([first_seg[2][1], agent_pos[1]])
+
+            path_x.extend([last_seg[3][0], agent_pos[0]])
+            path_y.extend([last_seg[3][1], agent_pos[1]])
             path_line.set_data(path_x, path_y)
             updates.append(path_line)
 

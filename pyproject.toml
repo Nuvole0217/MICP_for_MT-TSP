@@ -16,7 +16,7 @@ requires = ["pdm-backend"]
 build-backend = "pdm.backend"
 
 [project.scripts]
-mt-tsp= "src.__main__:app"
+mt-tsp= "src.mt-tsp.__main__:app"
 
 [tool.bandit]
 exclude_dirs = ["tests"]
