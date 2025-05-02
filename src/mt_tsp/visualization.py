@@ -6,7 +6,7 @@ from matplotlib.animation import FuncAnimation, PillowWriter
 from matplotlib.patches import Arrow
 from numpy.typing import NDArray
 
-from mt_tsp.model import MTSPMICP
+from src.mt_tsp.model import MTSPMICP
 
 
 class Visualizer:
@@ -22,7 +22,7 @@ class Visualizer:
         self.gif_path = gif_path
         self.fps = fps
         self.speed_arrow_scale = speed_arrow_scale
-        self.times: NDArray[np.float64] = np.linspace(0.0, model.T, frames)
+        self.times: NDArray[np.float64] = np.linspace(0.0, model.T, frames)  # type: ignore
 
         self.tour: List[int] = model.tour
         self.agent_time_points: List[float] = [model.t[i].Xn for i in self.tour]

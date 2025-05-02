@@ -10,7 +10,7 @@ def main() -> None:
         Target("B", (8.0, 0.0), (0.0, 0.3), (0.0, 100.0)),
         Target("C", (5.0, 5.0), (-0.1, 0.3), (0.0, 30.0)),
         Target("D", (1.0, 6.0), (0.1, 0.2), (0.0, 30.0)),
-        Target("E", (2.0, 2.0), (0.1, 0.1), (0.0, 100.0)),
+        Target("E", (2.0, 2.0), (0.1, 0.05), (0.0, 100.0)),
         Target("F", (3.0, 3.0), (0.2, 0.3), (0.0, 1000.0)),
     ]
     model = MTSPMICP(targets, depot=(10.0, 10.0), T=1000.0, vmax=0.5, square_side=10.0)
@@ -21,5 +21,6 @@ def main() -> None:
     print("Saved animation to mt_tsp.gif")
 
 
+# to directly run as a module
 if __name__ == "__main__":
     main()

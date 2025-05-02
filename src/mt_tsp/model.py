@@ -173,5 +173,5 @@ class MTSPMICP:
         self.agent_time_points = [self.t[i].Xn for i in tour]
         assert len(tour) > 0, "There is no feasible solutions, no output for tour!"
         assert len(tour) == len(self.agent_time_points), "Time point mismatch!"
-        print(self.agent_time_points)
+        print(f"Agent time points: {self.agent_time_points}")
         return tour
