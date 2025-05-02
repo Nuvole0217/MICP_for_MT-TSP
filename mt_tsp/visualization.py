@@ -70,8 +70,8 @@ class Visualizer:
     def animate(self) -> None:
         fig, ax = plt.subplots(figsize=(10, 8), dpi=100)
         ax.set(
-            xlim=(-self.model.square_side, self.model.square_side ),
-            ylim=(-self.model.square_side, self.model.square_side ),
+            xlim=(-self.model.square_side*0.5, self.model.square_side*1.5),
+            ylim=(-self.model.square_side*0.5, self.model.square_side*1.5),
             title=f"MT-TSP Solution (vmax={self.model.vmax})",
             xlabel="X Coordinate",
             ylabel="Y Coordinate",
