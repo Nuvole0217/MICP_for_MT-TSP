@@ -19,4 +19,5 @@ def run_examples() -> None:
     viz.animate()
     print("Saved animation to mt_tsp.gif")
 
+
 run_examples()

@@ -1,8 +1,11 @@
+import json
 import math
+from pathlib import Path
 from typing import Any, List, Tuple
 
 import gurobipy as gp
 import numpy as np
+import tomli
 from gurobipy import GRB
 from numpy.typing import NDArray
 
@@ -174,3 +177,29 @@ class MTSPMICP:
         assert len(tour) == len(self.agent_time_points), "Time point mismatch!"
         print(f"Agent time points: {self.agent_time_points}")
         return tour
+
+
+def load_config(target_path: Path, agent_path: Path) -> MTSPMICP:
+    with open(target_path, encoding="utf-8") as f:
+        target_data = json.load(f)
+
+    with open(agent_path, "rb") as g:
+        agent_data = tomli.load(g)
+
+    targets: List[Target] = []
+    for key, data in target_data.items():
+        targets.append(
+            Target(
+                name=key,
+                p0=(data["px"], data["py"]),
+                v=(data["vx"], data["vy"]),
+                t_window=(data["tmin"], data["tmax"]),
+            )
+        )
+    return MTSPMICP(
+        targets=targets,
+        depot=(agent_data["depot"]["px"], agent_data["depot"]["py"]),
+        T=agent_data["param"]["T"],
+        vmax=agent_data["param"]["vmax"],
+        square_side=agent_data["param"]["R"],
+    )
