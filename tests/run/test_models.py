@@ -10,7 +10,7 @@ from mt_tsp.model import MTSPMICP, load_config
 
 def load_case(case_name: str) -> MTSPMICP:
     root = Path(__file__).resolve().parent
-    target_file = root / case_name / "target.json"
+    target_file = root / case_name / "targets.json"
     agent_file = root / case_name / "agent.toml"
     return load_config(target_file, agent_file)
 
