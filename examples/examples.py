@@ -1,4 +1,4 @@
-from mt_tsp.model import MTSPMICP, Target
+from mt_tsp.model import MTSPMICP, Target, load_config
 from mt_tsp.visualization import Visualizer
 
 

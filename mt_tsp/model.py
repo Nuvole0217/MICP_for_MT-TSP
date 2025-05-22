@@ -122,7 +122,7 @@ class MTSPMICP:
         # add constraints for almost tsp
         for i in range(self.N):
             r_i = 0.0 if i in (s, s_end) else self.targets[i - 1].radius
-            m.addQConstr(self.delta_x[i] ** 2 + self.delta_y[i] ** 2 == r_i**2)
+            m.addQConstr(self.delta_x[i] ** 2 + self.delta_y[i] ** 2 <= r_i**2)
 
         # node relationship
         for i, j in self.E:
@@ -199,6 +199,7 @@ class MTSPMICP:
         self.delta_y_list = [self.delta_y[i].Xn for i in tour]
         assert len(tour) > 0, "There is no feasible solutions, no output for tour!"
         assert len(tour) == len(self.agent_time_points), "Time point mismatch!"
+        assert len(tour) == len(self.targets), "Not all targets are in the solution!"
         print(f"Agent time points: {self.agent_time_points}")
         print(f"delta_x: {self.delta_x_list}")
         print(f"delta_y: {self.delta_y_list}")
