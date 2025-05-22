@@ -17,11 +17,13 @@ class Target:
         p0: Tuple[float, float],
         v: Tuple[float, float],
         t_window: Tuple[float, float],
+        radius: float = 0.0,
     ) -> None:
         self.name: str = name
         self.p0: NDArray[np.float64] = np.array(p0, dtype=float)
         self.v: NDArray[np.float64] = np.array(v, dtype=float)
         self.t_window: Tuple[float, float] = t_window
+        self.radius: float = radius
 
     def position(self, t: float) -> NDArray[np.float64]:
         return self.p0 + self.v * t
@@ -43,6 +45,8 @@ class MTSPMICP:
         self.square_side: float = square_side
         self.tour: List[int] = []
         self.agent_time_points: List[float] = []
+        self.delta_x_list: List[float] = []
+        self.delta_y_list: List[float] = []
         self._build_graph()
         self._build_model()
 
@@ -61,6 +65,14 @@ class MTSPMICP:
         self.t: gp.tupledict[int, gp.Var] = m.addVars(
             self.N, lb=0.0, ub=self.T, name="t"
         )
+        # TODO: we can set a tighter upperbound for delta_x and delta_y here
+        self.delta_x: gp.tupledict[int, gp.Var] = m.addVars(
+            self.N, lb=-self.square_side, ub=self.square_side, name="delta_x"
+        )
+        self.delta_y: gp.tupledict[int, gp.Var] = m.addVars(
+            self.N, lb=-self.square_side, ub=self.square_side, name="delta_y"
+        )
+
         self.y_e: gp.tupledict[Tuple[Any, ...], gp.Var] = m.addVars(
             self.E, vtype=GRB.BINARY, name="y_e"
         )
@@ -102,6 +114,16 @@ class MTSPMICP:
         # square area uppperbound
         R: float = math.sqrt(self.square_side**2 * 2)
 
+        # time feasibility
+        m.addConstr(self.t[0] == 0.0)  # initial time t_s = 0
+        m.addConstr(self.t[self.N - 1] >= 0)
+        m.addConstr(self.t[self.N - 1] <= self.T)  # end time t_s' <= T
+
+        # add constraints for almost tsp
+        for i in range(self.N):
+            r_i = 0.0 if i in (s, s_end) else self.targets[i - 1].radius
+            m.addQConstr(self.delta_x[i] ** 2 + self.delta_y[i] ** 2 == r_i**2)
+
         # node relationship
         for i, j in self.E:
             if i in (s, s_end):
@@ -123,14 +145,14 @@ class MTSPMICP:
             # position definition (7)-(8)
             m.addConstr(
                 self.lx[(i, j)]
-                == (p_j[0] + v_j[0] * self.t[j] - v_j[0] * t_j0)
-                - (p_i[0] + v_i[0] * self.t[i] - v_i[0] * t_i0)
+                == (p_j[0] + self.delta_x[j] + v_j[0] * self.t[j] - v_j[0] * t_j0)
+                - (p_i[0] + self.delta_x[i] + v_i[0] * self.t[i] - v_i[0] * t_i0)
             )
 
             m.addConstr(
                 self.ly[(i, j)]
-                == (p_j[1] + v_j[1] * self.t[j] - v_j[1] * t_j0)
-                - (p_i[1] + v_i[1] * self.t[i] - v_i[1] * t_i0)
+                == (p_j[1] + self.delta_y[j] + v_j[1] * self.t[j] - v_j[1] * t_j0)
+                - (p_i[1] + self.delta_y[i] + v_i[1] * self.t[i] - v_i[1] * t_i0)
             )
 
             # time feasibility
@@ -138,10 +160,10 @@ class MTSPMICP:
                 self.lt[(i, j)]
                 <= self.vmax * (self.t[j] - self.t[i] + self.T * (1 - self.y_e[(i, j)]))
             )
-
-            m.addConstr(self.t[0] == 0.0)  # initial time t_s = 0
-            m.addConstr(self.t[self.N - 1] >= 0)
-            m.addConstr(self.t[self.N - 1] <= self.T)  # end time t_s' <= T
+            m.addConstr(
+                self.t[j]
+                >= self.t[i] + self.lt[(i, j)] - self.T * (1 - self.y_e[(i, j)])
+            )
 
             m.addConstr(self.l[(i, j)] == self.lt[(i, j)] + R * (1 - self.y_e[(i, j)]))
 
@@ -173,9 +195,13 @@ class MTSPMICP:
                     break
         self.tour = tour
         self.agent_time_points = [self.t[i].Xn for i in tour]
+        self.delta_x_list = [self.delta_x[i].Xn for i in tour]
+        self.delta_y_list = [self.delta_y[i].Xn for i in tour]
         assert len(tour) > 0, "There is no feasible solutions, no output for tour!"
         assert len(tour) == len(self.agent_time_points), "Time point mismatch!"
         print(f"Agent time points: {self.agent_time_points}")
+        print(f"delta_x: {self.delta_x_list}")
+        print(f"delta_y: {self.delta_y_list}")
         return tour
 
 
@@ -194,6 +220,7 @@ def load_config(target_path: Path, agent_path: Path) -> MTSPMICP:
                 p0=(data["px"], data["py"]),
                 v=(data["vx"], data["vy"]),
                 t_window=(data["tmin"], data["tmax"]),
+                radius=data["radius"],
             )
         )
     return MTSPMICP(

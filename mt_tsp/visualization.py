@@ -26,6 +26,8 @@ class Visualizer:
 
         self.tour: List[int] = model.tour
         self.agent_time_points: List[float] = [model.t[i].Xn for i in self.tour]
+        self.delta_x: List[float] = [model.delta_x[i].Xn for i in self.tour]
+        self.delta_y: List[float]= [model.delta_y[i].Xn for i in self.tour]
 
         # visualization parameters
         self.target_colors = plt.cm.tab10(np.linspace(0, 1, len(model.targets)))
@@ -47,13 +49,13 @@ class Visualizer:
                 start_pos = self.model.depot
             else:
                 target = self.model.targets[from_node - 1]
-                start_pos = target.position(t_start)
+                start_pos = target.position(t_start) + (self.delta_x[i], self.delta_y[i])
 
             if to_node == self.model.N - 1:
                 end_pos = self.model.depot
             else:
                 target = self.model.targets[to_node - 1]
-                end_pos = target.position(t_end)
+                end_pos = target.position(t_end) + (self.delta_x[i+1], self.delta_y[i+1])
 
             segments.append((t_start, t_end, np.array(start_pos), np.array(end_pos)))
         return segments
