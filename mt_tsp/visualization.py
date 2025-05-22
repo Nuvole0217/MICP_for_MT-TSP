@@ -3,7 +3,7 @@ from typing import Any, List, Tuple
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.animation import FuncAnimation, PillowWriter
-from matplotlib.patches import Arrow
+from matplotlib.patches import Arrow, Circle
 from numpy.typing import NDArray
 
 from mt_tsp.model import MTSPMICP
@@ -16,7 +16,7 @@ class Visualizer:
         gif_path: str = "mt_tsp.gif",
         fps: int = 10,
         frames: int = 1000,
-        speed_arrow_scale: float = 3,
+        speed_arrow_scale: float = 0.7,
     ) -> None:
         self.model = model
         self.gif_path = gif_path
@@ -78,6 +78,7 @@ class Visualizer:
             xlabel="X Coordinate",
             ylabel="Y Coordinate",
         )
+        ax.set_aspect("equal")
         ax.grid(True, alpha=0.3)
 
         agent_dot = ax.plot(
@@ -92,6 +93,7 @@ class Visualizer:
         )[0]
 
         target_dots: List[Any] = []
+        target_circle_region: List[Any] = []
         speed_arrows: List[Arrow] = []
 
         for i, tgt in enumerate(self.model.targets):
@@ -106,7 +108,20 @@ class Visualizer:
                 label=f"Target {tgt.name}",
             )[0]
             target_dots.append(dot)
-
+            
+            # Circles 
+            circle = Circle(
+                (0,0),
+                tgt.radius,
+                facecolor=self.target_colors[i],
+                edgecolor="black",
+                alpha=0.3,
+                label=f"Target {tgt.name} Region",
+            )
+            circle.set_zorder(0)
+            ax.add_patch(circle)
+            target_circle_region.append(circle)
+            
             # speed arrows
             arrow = Arrow(0, 0, 0, 0, width=0.3, color=self.arrow_color, alpha=0.7)
             ax.add_patch(arrow)
@@ -132,8 +147,11 @@ class Visualizer:
                 dot.set_data([], [])
             for arrow in speed_arrows:
                 arrow.set_data(x=0, y=0, width=0)
+            for circle in target_circle_region:
+                circle.set_radius(0)
+                circle.set_center((0,0))
             path_line.set_data([], [])
-            return [agent_dot] + target_dots + speed_arrows + [path_line]
+            return [agent_dot] + target_dots + speed_arrows + [path_line] + target_circle_region
 
         def update(frame: int) -> List[Any]:
             t = self.times[frame]
@@ -144,16 +162,18 @@ class Visualizer:
                 # currentt posistion
                 pos = tgt.position(t)
                 target_dots[i].set_data([pos[0]], [pos[1]])
+                target_circle_region[i].set_center((pos[0], pos[1]))
+                target_circle_region[i].set_radius(tgt.radius)
 
                 # show arrows
                 if np.linalg.norm(tgt.v) > 1e-3:
-                    dx = tgt.v[0] * self.speed_arrow_scale
-                    dy = tgt.v[1] * self.speed_arrow_scale
+                    dx = (tgt.v[0] * self.speed_arrow_scale) / np.linalg.norm(tgt.v)
+                    dy = (tgt.v[1] * self.speed_arrow_scale) / np.linalg.norm(tgt.v)
                     speed_arrows[i].set_data(pos[0], pos[1], dx, dy, width=0.3)
                 else:
                     speed_arrows[i].set_data(0, 0, 0, 0, 0)
 
-                updates.extend([target_dots[i], speed_arrows[i]])
+                updates.extend([target_dots[i], speed_arrows[i], target_circle_region[i]])
 
             # udapte position
             agent_pos = self._get_agent_pos(t)

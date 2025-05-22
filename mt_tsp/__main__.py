@@ -23,7 +23,7 @@ def run(
     model = load_config(target_path, agent_path)
     tour = model.solve()
     print("Tour: ", tour)
-    viz = Visualizer(model, gif_path="mt_tsp.gif", fps=10, frames=1000)
+    viz = Visualizer(model, gif_path="mt_tsp.gif", fps=10, frames=500)
     viz.animate()
     print("Saved animation to mt_tsp.gif")
     return
