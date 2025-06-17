@@ -31,8 +31,8 @@ def test_mtsp_solution(case_name: str) -> None:
     ), "Agent time points must include depot, all targets once, and return to depot."
 
     s, s_end = 0, model.N - 1
-    start_time = model.t[0].Xn
-    end_time = model.t[s_end].Xn
+    start_time = model.agent_time_points[s]
+    end_time = model.agent_time_points[s_end]
     assert pytest.approx(0.0) == start_time, "Start time must be zero."
     assert 0.0 <= end_time <= model.max_time, "End time must be within the horizon."
 

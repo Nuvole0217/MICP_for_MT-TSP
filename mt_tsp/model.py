@@ -195,7 +195,7 @@ class MTSPMICP:
         self.delta_y_list = [self.delta_y[i].Xn for i in tour]
         assert len(tour) > 0, "There is no feasible solutions, no output for tour!"
         assert len(tour) == len(self.agent_time_points), "Time point mismatch!"
-        assert len(tour) == len(self.targets), "Not all targets are in the solution!"
+        assert len(tour) == len(self.targets) + 2, "Not all targets are in the solution!"
         print(f"Agent time points: {self.agent_time_points}")
         print(f"delta_x: {self.delta_x_list}")
         print(f"delta_y: {self.delta_y_list}")
@@ -311,10 +311,10 @@ class MTSPMICPGCS:
             self.edges, vtype=GRB.CONTINUOUS, lb=-GRB.INFINITY, name="ly"
         )
         self.delta_x = m.addVars(
-            self.N, vtype=GRB.CONTINUOUS, lb=-self.vmax, ub=self.vmax, name="delta_x"
+            self.N, vtype=GRB.CONTINUOUS, lb=-GRB.INFINITY, ub=GRB.INFINITY, name="delta_x"
         )
         self.delta_y = m.addVars(
-            self.N, vtype=GRB.CONTINUOUS, lb=-self.vmax, ub=self.vmax, name="delta_y"
+            self.N, vtype=GRB.CONTINUOUS, lb=-GRB.INFINITY, ub=GRB.INFINITY, name="delta_y"
         )
 
         # take objective functions
@@ -353,7 +353,7 @@ class MTSPMICPGCS:
             m.addConstr(self.l_x[i, j] ** 2 + self.l_y[i, j] ** 2 <= self.l[i, j] ** 2)
 
             data_i = self.node_data[i]
-            data_j = self.node_data[j]
+            data_j = self.node_data[j]            
             m.addConstr(self.z_t[i, j] >= data_i["t_underline"] * self.y_e[i, j])
             m.addConstr(self.z_t[i, j] <= data_i["t_bar"] * self.y_e[i, j])
             m.addConstr(self.z_prime_t[i, j] >= data_j["t_underline"] * self.y_e[i, j])
@@ -364,16 +364,14 @@ class MTSPMICPGCS:
             m.addConstr(
                 self.z_x[i, j]
                 - data_i["v"][0] * self.z_t[i, j]
-                - self.delta_x[i]
-                - const_ix * self.y_e[i, j]
-                == 0
+                - self.delta_x[i] * self.y_e[i,j]
+                == const_ix* self.y_e[i,j]
             )
             m.addConstr(
                 self.z_y[i, j]
                 - data_i["v"][1] * self.z_t[i, j]
                 - self.delta_y[i]
-                - const_iy * self.y_e[i, j]
-                == 0
+                == const_iy* self.y_e[i,j]
             )
 
             const_jx = data_j["p_underline"][0] - data_j["t_underline"] * data_j["v"][0]
@@ -381,16 +379,14 @@ class MTSPMICPGCS:
             m.addConstr(
                 self.z_prime_x[i, j]
                 - data_j["v"][0] * self.z_prime_t[i, j]
-                - self.delta_x[j]
-                - const_jx * self.y_e[i, j]
-                == 0
+                - self.delta_x[j]* self.y_e[i,j]
+                == const_jx* self.y_e[i,j]
             )
             m.addConstr(
                 self.z_prime_y[i, j]
                 - data_j["v"][1] * self.z_prime_t[i, j]
-                - self.delta_y[j]
-                - const_jy * self.y_e[i, j]
-                == 0
+                - self.delta_y[j]* self.y_e[i,j]
+                == const_jy* self.y_e[i,j]
             )
         self.model = m
 
@@ -438,6 +434,7 @@ class MTSPMICPGCS:
 
             self.agent_positions = [visit_points[i]["pos"] for i in tour_indices]
             self.agent_time_points = [visit_points[i]["time"] for i in tour_indices]
+            radius_set = [self.node_data[i]["radius"] for i in tour_indices]
             
             delta_x = [
                 self.delta_x[i].Xn for i in tour_indices
@@ -447,7 +444,8 @@ class MTSPMICPGCS:
             ]
             print(f"delta_x: {delta_x}")
             print(f"delta_y: {delta_y}")
-            
+            print(f"radius: {radius_set}")
+
             self.tour = tour_indices
             assert (
                 len(self.tour) == self.n_targets + 2
