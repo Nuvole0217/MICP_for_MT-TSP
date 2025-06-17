@@ -1,7 +1,7 @@
 import json
 import math
 from pathlib import Path
-from typing import Any, List, Tuple
+from typing import Any, Dict, List, Tuple
 
 import gurobipy as gp
 import numpy as np
@@ -231,3 +231,249 @@ def load_config(target_path: Path, agent_path: Path) -> MTSPMICP:
         vmax=agent_data["param"]["vmax"],
         square_side=agent_data["param"]["R"],
     )
+
+
+class MTSPMICPGCS:
+    def __init__(
+        self,
+        targets: List[Target],
+        depot: Tuple[float, float] = (0.0, 0.0),
+        max_time: float = 150.0,
+        vmax: float = 8.0,
+    ) -> None:
+        self.targets: List[Target] = targets
+        self.depot: Tuple[float, float] = depot
+        self.max_time: float = max_time
+        self.vmax: float = vmax
+
+        # save the works
+        self.tour: List[str] = []
+        self.agent_time_points: List[float] = []
+        self.agent_positions: List[Tuple[float, float]] = []
+
+        # inner mapping, easier for gorubi solver
+        self.name_to_idx: Dict[str, int] = {}
+        self.idx_to_name: Dict[int, str] = {}
+
+        self._build_graph()
+        self._build_model()
+
+    def _build_graph(self) -> None:
+        """
+        build the graph (edge, nodes) and preprocessing the node data.
+        """
+        self.n_targets: int = len(self.targets)
+        self.N: int = self.n_targets + 2
+
+        self.s_node_idx: int = 0
+        self.s_prime_node_idx: int = self.N - 1
+
+        # build index to name
+        self.idx_to_name = {self.s_node_idx: "Depot", self.s_prime_node_idx: "Depot"}
+        self.V_tar_indices: List[int] = []
+        for i, tgt in enumerate(self.targets):
+            node_idx = i + 1
+            self.name_to_idx[tgt.name] = node_idx
+            self.idx_to_name[node_idx] = tgt.name
+            self.V_tar_indices.append(node_idx)
+
+        self.edges: List[Tuple[int, int]] = []
+        self.edges.extend([(self.s_node_idx, j) for j in self.V_tar_indices])
+        self.edges.extend(
+            [(i, j) for i in self.V_tar_indices for j in self.V_tar_indices if i != j]
+        )
+        self.edges.extend([(i, self.s_prime_node_idx) for i in self.V_tar_indices])
+
+        # preprocess node data
+        self.node_data: Dict[int, Dict[str, Any]] = {}
+        for tgt in self.targets:
+            node_idx = self.name_to_idx[tgt.name]
+            t_underline = tgt.t_window[0]
+            # calculate the time at the begining of the time windows p_underline
+            # GCS model takes p(t) = p_underline + v * (t - t_underline)
+            p_underline = tgt.p0 + tgt.v * t_underline
+
+            self.node_data[node_idx] = {
+                "p_underline": p_underline,
+                "v": tgt.v,
+                "t_underline": t_underline,
+                "t_bar": tgt.t_window[1],
+                "radius": tgt.radius,
+            }
+
+        self.node_data[self.s_node_idx] = {
+            "p_underline": self.depot,
+            "v": np.array([0.0, 0.0]),
+            "t_underline": 0.0,
+            "t_bar": 0.0,
+            "radius": 0.0,
+        }
+        self.node_data[self.s_prime_node_idx] = {
+            "p_underline": self.depot,
+            "v": np.array([0.0, 0.0]),
+            "t_underline": 0.0,
+            "t_bar": self.max_time,
+            "radius": 0.0,
+        }
+
+    def _build_model(self) -> None:
+        m = gp.Model("MT-TSP-MICP-GCS")
+
+        self.y_e = m.addVars(self.edges, vtype=GRB.BINARY, name="y_e")
+        self.z_x = m.addVars(self.edges, vtype=GRB.CONTINUOUS, name="zx")
+        self.z_y = m.addVars(self.edges, vtype=GRB.CONTINUOUS, name="zy")
+        self.z_t = m.addVars(self.edges, vtype=GRB.CONTINUOUS, name="zt")
+        self.z_prime_x = m.addVars(self.edges, vtype=GRB.CONTINUOUS, name="z_prime_x")
+        self.z_prime_y = m.addVars(self.edges, vtype=GRB.CONTINUOUS, name="z_prime_y")
+        self.z_prime_t = m.addVars(self.edges, vtype=GRB.CONTINUOUS, name="z_prime_t")
+        self.l = m.addVars(self.edges, vtype=GRB.CONTINUOUS, lb=0.0, name="l")
+        self.l_x = m.addVars(
+            self.edges, vtype=GRB.CONTINUOUS, lb=-GRB.INFINITY, name="lx"
+        )
+        self.l_y = m.addVars(
+            self.edges, vtype=GRB.CONTINUOUS, lb=-GRB.INFINITY, name="ly"
+        )
+        self.delta_x = m.addVars(
+            self.N, vtype=GRB.CONTINUOUS, lb=-self.vmax, ub=self.vmax, name="delta_x"
+        )
+        self.delta_y = m.addVars(
+            self.N, vtype=GRB.CONTINUOUS, lb=-self.vmax, ub=self.vmax, name="delta_y"
+        )
+
+        # take objective functions
+        m.setObjective(gp.quicksum(self.l[i, j] for i, j in self.edges), GRB.MINIMIZE)
+
+        # take constraints
+        m.addConstr(self.y_e.sum(self.s_node_idx, "*") == 1)
+        m.addConstr(self.y_e.sum("*", self.s_prime_node_idx) == 1)
+        for i in self.V_tar_indices:
+            m.addConstr(self.y_e.sum("*", i) == 1)
+            m.addConstr(self.y_e.sum("*", i) == self.y_e.sum(i, "*"))
+            m.addConstr(
+                gp.quicksum(self.z_prime_x[k, i] for k, j in self.edges if j == i)
+                == gp.quicksum(self.z_x[i, j] for k, j in self.edges if k == i)
+            )
+            m.addConstr(
+                gp.quicksum(self.z_prime_y[k, i] for k, j in self.edges if j == i)
+                == gp.quicksum(self.z_y[i, j] for k, j in self.edges if k == i)
+            )
+            m.addConstr(
+                gp.quicksum(self.z_prime_t[k, i] for k, j in self.edges if j == i)
+                == gp.quicksum(self.z_t[i, j] for k, j in self.edges if k == i)
+            )
+            m.addConstr(
+                self.delta_x[i] ** 2 + self.delta_y[i] ** 2
+                <= self.node_data[i]["radius"] ** 2
+            )
+
+        for i, j in self.edges:
+            m.addConstr(self.l_x[i, j] == self.z_prime_x[i, j] - self.z_x[i, j])
+            m.addConstr(self.l_y[i, j] == self.z_prime_y[i, j] - self.z_y[i, j])
+            m.addConstr(
+                self.l[i, j] <= self.vmax * (self.z_prime_t[i, j] - self.z_t[i, j])
+            )
+            m.addConstr(self.l_x[i, j] ** 2 + self.l_y[i, j] ** 2 <= self.l[i, j] ** 2)
+
+            data_i = self.node_data[i]
+            data_j = self.node_data[j]
+            m.addConstr(self.z_t[i, j] >= data_i["t_underline"] * self.y_e[i, j])
+            m.addConstr(self.z_t[i, j] <= data_i["t_bar"] * self.y_e[i, j])
+            m.addConstr(self.z_prime_t[i, j] >= data_j["t_underline"] * self.y_e[i, j])
+            m.addConstr(self.z_prime_t[i, j] <= data_j["t_bar"] * self.y_e[i, j])
+
+            const_ix = data_i["p_underline"][0] - data_i["t_underline"] * data_i["v"][0]
+            const_iy = data_i["p_underline"][1] - data_i["t_underline"] * data_i["v"][1]
+            m.addConstr(
+                self.z_x[i, j]
+                - data_i["v"][0] * self.z_t[i, j] - self.delta_x[i]
+                - const_ix * self.y_e[i, j]
+                == 0
+            )
+            m.addConstr(
+                self.z_y[i, j]
+                - data_i["v"][1] * self.z_t[i, j] - self.delta_y[i]
+                - const_iy * self.y_e[i, j]
+                == 0
+            )
+
+            const_jx = data_j["p_underline"][0] - data_j["t_underline"] * data_j["v"][0]
+            const_jy = data_j["p_underline"][1] - data_j["t_underline"] * data_j["v"][1]
+            m.addConstr(
+                self.z_prime_x[i, j]
+                - data_j["v"][0] * self.z_prime_t[i, j] - self.delta_x[j]
+                - const_jx * self.y_e[i, j]
+                == 0
+            )
+            m.addConstr(
+                self.z_prime_y[i, j]
+                - data_j["v"][1] * self.z_prime_t[i, j] - self.delta_y[j]
+                - const_jy * self.y_e[i, j]
+                == 0
+            )
+
+        self.model = m
+
+    def solve(self) -> List[str]:
+        self.model.optimize()
+
+        if self.model.status == GRB.OPTIMAL or self.model.status == GRB.SUBOPTIMAL:
+            print(f"{self.model.status}, total distance: {self.model.ObjVal:.2f}")
+
+            tour_indices = [self.s_node_idx]
+            current_idx = self.s_node_idx
+            while current_idx != self.s_prime_node_idx:
+                for i, j in self.edges:
+                    if i == current_idx and self.y_e[i, j].X > 0.5:
+                        tour_indices.append(j)
+                        current_idx = j
+                        break
+
+            self.tour = [self.idx_to_name[i] for i in tour_indices]
+
+            visit_points = {}
+            p_s_x = sum(
+                self.z_x[self.s_node_idx, j].X
+                for _, j in self.edges
+                if _ == self.s_node_idx
+            )
+            p_s_y = sum(
+                self.z_y[self.s_node_idx, j].X
+                for _, j in self.edges
+                if _ == self.s_node_idx
+            )
+            t_s = sum(
+                self.z_t[self.s_node_idx, j].X
+                for _, j in self.edges
+                if _ == self.s_node_idx
+            )
+            visit_points[self.s_node_idx] = {"pos": (p_s_x, p_s_y), "time": t_s}
+
+            for i in self.V_tar_indices + [self.s_prime_node_idx]:
+                p_i_x = sum(self.z_prime_x[k, i].X for k, _ in self.edges if _ == i)
+                p_i_y = sum(self.z_prime_y[k, i].X for k, _ in self.edges if _ == i)
+                t_i = sum(self.z_prime_t[k, i].X for k, _ in self.edges if _ == i)
+                visit_points[i] = {"pos": (p_i_x, p_i_y), "time": t_i}
+
+            self.agent_positions = [visit_points[i]["pos"] for i in tour_indices]
+            self.agent_time_points = [visit_points[i]["time"] for i in tour_indices]
+
+            assert (
+                len(self.tour) == self.n_targets + 2
+            ), "Wrong number of targets in the tour!"
+
+            print(f"Best tour: {' -> '.join(self.tour)}")
+            print(f"Access time points: {[f'{t:.2f}' for t in self.agent_time_points]}")
+            print(
+                f"Access positions: {[f'({p[0]:.2f}, {p[1]:.2f})' for p in self.agent_positions]}"
+            )
+
+            return self.tour
+
+        elif self.model.status == GRB.INFEASIBLE:
+            print(" There is no feasible solution.")
+            return []
+        else:
+            print(
+                f" Optimization finished, but there is no best solution, with exit code: {self.model.status}"
+            )
+            return []

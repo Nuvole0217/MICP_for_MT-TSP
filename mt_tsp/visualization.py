@@ -27,7 +27,7 @@ class Visualizer:
         self.tour: List[int] = model.tour
         self.agent_time_points: List[float] = [model.t[i].Xn for i in self.tour]
         self.delta_x: List[float] = [model.delta_x[i].Xn for i in self.tour]
-        self.delta_y: List[float]= [model.delta_y[i].Xn for i in self.tour]
+        self.delta_y: List[float] = [model.delta_y[i].Xn for i in self.tour]
 
         # visualization parameters
         self.target_colors = plt.cm.tab10(np.linspace(0, 1, len(model.targets)))
@@ -49,13 +49,19 @@ class Visualizer:
                 start_pos = self.model.depot
             else:
                 target = self.model.targets[from_node - 1]
-                start_pos = target.position(t_start) + (self.delta_x[i], self.delta_y[i])
+                start_pos = target.position(t_start) + (
+                    self.delta_x[i],
+                    self.delta_y[i],
+                )
 
             if to_node == self.model.N - 1:
                 end_pos = self.model.depot
             else:
                 target = self.model.targets[to_node - 1]
-                end_pos = target.position(t_end) + (self.delta_x[i+1], self.delta_y[i+1])
+                end_pos = target.position(t_end) + (
+                    self.delta_x[i + 1],
+                    self.delta_y[i + 1],
+                )
 
             segments.append((t_start, t_end, np.array(start_pos), np.array(end_pos)))
         return segments
@@ -108,10 +114,10 @@ class Visualizer:
                 label=f"Target {tgt.name}",
             )[0]
             target_dots.append(dot)
-            
-            # Circles 
+
+            # Circles
             circle = Circle(
-                (0,0),
+                (0, 0),
                 tgt.radius,
                 facecolor=self.target_colors[i],
                 edgecolor="black",
@@ -121,7 +127,7 @@ class Visualizer:
             circle.set_zorder(0)
             ax.add_patch(circle)
             target_circle_region.append(circle)
-            
+
             # speed arrows
             arrow = Arrow(0, 0, 0, 0, width=0.3, color=self.arrow_color, alpha=0.7)
             ax.add_patch(arrow)
@@ -149,9 +155,15 @@ class Visualizer:
                 arrow.set_data(x=0, y=0, width=0)
             for circle in target_circle_region:
                 circle.set_radius(0)
-                circle.set_center((0,0))
+                circle.set_center((0, 0))
             path_line.set_data([], [])
-            return [agent_dot] + target_dots + speed_arrows + [path_line] + target_circle_region
+            return (
+                [agent_dot]
+                + target_dots
+                + speed_arrows
+                + [path_line]
+                + target_circle_region
+            )
 
         def update(frame: int) -> List[Any]:
             t = self.times[frame]
@@ -173,7 +185,9 @@ class Visualizer:
                 else:
                     speed_arrows[i].set_data(0, 0, 0, 0, 0)
 
-                updates.extend([target_dots[i], speed_arrows[i], target_circle_region[i]])
+                updates.extend(
+                    [target_dots[i], speed_arrows[i], target_circle_region[i]]
+                )
 
             # udapte position
             agent_pos = self._get_agent_pos(t)
