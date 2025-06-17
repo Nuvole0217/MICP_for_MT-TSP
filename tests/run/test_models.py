@@ -5,14 +5,15 @@ from typing import Any, List, Tuple
 import gurobipy as gp
 import pytest
 
-from mt_tsp.model import MTSPMICP, load_config
+from mt_tsp.model import MTSPMICP, MTSPMICPGCS
+from mt_tsp.utils.loader import load_config
 
 
-def load_case(case_name: str) -> MTSPMICP:
+def load_case(case_name: str) -> MTSPMICP | MTSPMICPGCS:
     root = Path(__file__).resolve().parent
     target_file = root / case_name / "targets.json"
     agent_file = root / case_name / "agent.toml"
-    return load_config(target_file, agent_file)
+    return load_config(target_file, agent_file, 1)
 
 
 @pytest.mark.parametrize("case_name", ["simple", "complex"])
@@ -33,7 +34,7 @@ def test_mtsp_solution(case_name: str) -> None:
     start_time = model.t[0].Xn
     end_time = model.t[s_end].Xn
     assert pytest.approx(0.0) == start_time, "Start time must be zero."
-    assert 0.0 <= end_time <= model.T, "End time must be within the horizon."
+    assert 0.0 <= end_time <= model.max_time, "End time must be within the horizon."
 
     # check tsp-basics
     print("Check TSP basics: \n")
@@ -75,7 +76,7 @@ def test_mtsp_solution(case_name: str) -> None:
         lt_val = model.lt[(i, j)].Xn
         assert (
             lt_val
-            <= model.vmax * (model.t[j].Xn - model.t[i].Xn + model.T * (1 - yi)) + 1e-6
+            <= model.vmax * (model.t[j].Xn - model.t[i].Xn + model.max_time * (1 - yi)) + 1e-6
         ), f"Time feasibility violated on edge {(i, j)}."
         l_val = model.l[(i, j)].Xn
         expected_l = lt_val + R * (1 - yi)

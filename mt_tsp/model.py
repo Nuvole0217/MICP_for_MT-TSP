@@ -1,14 +1,10 @@
-import json
 import math
-from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 import gurobipy as gp
 import numpy as np
-import tomli
 from gurobipy import GRB
 from numpy.typing import NDArray
-
 
 class Target:
     def __init__(
@@ -34,13 +30,13 @@ class MTSPMICP:
         self,
         targets: List[Target],
         depot: Tuple[float, float] = (0.0, 0.0),
-        T: float = 10.0,
+        max_time: float = 10.0,
         vmax: float = 2.0,
         square_side: float = 10.0,
     ) -> None:
         self.targets: List[Target] = targets
         self.depot: NDArray[np.float64] = np.array(depot, dtype=float)
-        self.T: float = T
+        self.max_time: float = max_time
         self.vmax: float = vmax
         self.square_side: float = square_side
         self.tour: List[int] = []
@@ -63,7 +59,7 @@ class MTSPMICP:
 
         # decision variables
         self.t: gp.tupledict[int, gp.Var] = m.addVars(
-            self.N, lb=0.0, ub=self.T, name="t"
+            self.N, lb=0.0, ub=self.max_time, name="t"
         )
         # TODO: we can set a tighter upperbound for delta_x and delta_y here
         self.delta_x: gp.tupledict[int, gp.Var] = m.addVars(
@@ -117,7 +113,7 @@ class MTSPMICP:
         # time feasibility
         m.addConstr(self.t[0] == 0.0)  # initial time t_s = 0
         m.addConstr(self.t[self.N - 1] >= 0)
-        m.addConstr(self.t[self.N - 1] <= self.T)  # end time t_s' <= T
+        m.addConstr(self.t[self.N - 1] <= self.max_time)  # end time t_s' <= T
 
         # add constraints for almost tsp
         for i in range(self.N):
@@ -158,11 +154,11 @@ class MTSPMICP:
             # time feasibility
             m.addConstr(
                 self.lt[(i, j)]
-                <= self.vmax * (self.t[j] - self.t[i] + self.T * (1 - self.y_e[(i, j)]))
+                <= self.vmax * (self.t[j] - self.t[i] + self.max_time * (1 - self.y_e[(i, j)]))
             )
             m.addConstr(
                 self.t[j]
-                >= self.t[i] + self.lt[(i, j)] - self.T * (1 - self.y_e[(i, j)])
+                >= self.t[i] + self.lt[(i, j)] - self.max_time * (1 - self.y_e[(i, j)])
             )
 
             m.addConstr(self.l[(i, j)] == self.lt[(i, j)] + R * (1 - self.y_e[(i, j)]))
@@ -206,33 +202,6 @@ class MTSPMICP:
         return tour
 
 
-def load_config(target_path: Path, agent_path: Path) -> MTSPMICP:
-    with open(target_path, encoding="utf-8") as f:
-        target_data = json.load(f)
-
-    with open(agent_path, "rb") as g:
-        agent_data = tomli.load(g)
-
-    targets: List[Target] = []
-    for key, data in target_data.items():
-        targets.append(
-            Target(
-                name=key,
-                p0=(data["px"], data["py"]),
-                v=(data["vx"], data["vy"]),
-                t_window=(data["tmin"], data["tmax"]),
-                radius=data["radius"],
-            )
-        )
-    return MTSPMICP(
-        targets=targets,
-        depot=(agent_data["depot"]["px"], agent_data["depot"]["py"]),
-        T=agent_data["param"]["T"],
-        vmax=agent_data["param"]["vmax"],
-        square_side=agent_data["param"]["R"],
-    )
-
-
 class MTSPMICPGCS:
     def __init__(
         self,
@@ -247,7 +216,7 @@ class MTSPMICPGCS:
         self.vmax: float = vmax
 
         # save the works
-        self.tour: List[str] = []
+        self.tour: List[int] = []
         self.agent_time_points: List[float] = []
         self.agent_positions: List[Tuple[float, float]] = []
 
@@ -320,11 +289,19 @@ class MTSPMICPGCS:
         m = gp.Model("MT-TSP-MICP-GCS")
 
         self.y_e = m.addVars(self.edges, vtype=GRB.BINARY, name="y_e")
-        self.z_x = m.addVars(self.edges, vtype=GRB.CONTINUOUS, name="zx")
-        self.z_y = m.addVars(self.edges, vtype=GRB.CONTINUOUS, name="zy")
+        self.z_x = m.addVars(
+            self.edges, vtype=GRB.CONTINUOUS, name="zx", lb=-GRB.INFINITY
+        )
+        self.z_y = m.addVars(
+            self.edges, vtype=GRB.CONTINUOUS, name="zy", lb=-GRB.INFINITY
+        )
         self.z_t = m.addVars(self.edges, vtype=GRB.CONTINUOUS, name="zt")
-        self.z_prime_x = m.addVars(self.edges, vtype=GRB.CONTINUOUS, name="z_prime_x")
-        self.z_prime_y = m.addVars(self.edges, vtype=GRB.CONTINUOUS, name="z_prime_y")
+        self.z_prime_x = m.addVars(
+            self.edges, vtype=GRB.CONTINUOUS, name="z_prime_x", lb=-GRB.INFINITY
+        )
+        self.z_prime_y = m.addVars(
+            self.edges, vtype=GRB.CONTINUOUS, name="z_prime_y", lb=-GRB.INFINITY
+        )
         self.z_prime_t = m.addVars(self.edges, vtype=GRB.CONTINUOUS, name="z_prime_t")
         self.l = m.addVars(self.edges, vtype=GRB.CONTINUOUS, lb=0.0, name="l")
         self.l_x = m.addVars(
@@ -361,6 +338,7 @@ class MTSPMICPGCS:
                 gp.quicksum(self.z_prime_t[k, i] for k, j in self.edges if j == i)
                 == gp.quicksum(self.z_t[i, j] for k, j in self.edges if k == i)
             )
+
             m.addConstr(
                 self.delta_x[i] ** 2 + self.delta_y[i] ** 2
                 <= self.node_data[i]["radius"] ** 2
@@ -385,13 +363,15 @@ class MTSPMICPGCS:
             const_iy = data_i["p_underline"][1] - data_i["t_underline"] * data_i["v"][1]
             m.addConstr(
                 self.z_x[i, j]
-                - data_i["v"][0] * self.z_t[i, j] - self.delta_x[i]
+                - data_i["v"][0] * self.z_t[i, j]
+                - self.delta_x[i]
                 - const_ix * self.y_e[i, j]
                 == 0
             )
             m.addConstr(
                 self.z_y[i, j]
-                - data_i["v"][1] * self.z_t[i, j] - self.delta_y[i]
+                - data_i["v"][1] * self.z_t[i, j]
+                - self.delta_y[i]
                 - const_iy * self.y_e[i, j]
                 == 0
             )
@@ -400,20 +380,21 @@ class MTSPMICPGCS:
             const_jy = data_j["p_underline"][1] - data_j["t_underline"] * data_j["v"][1]
             m.addConstr(
                 self.z_prime_x[i, j]
-                - data_j["v"][0] * self.z_prime_t[i, j] - self.delta_x[j]
+                - data_j["v"][0] * self.z_prime_t[i, j]
+                - self.delta_x[j]
                 - const_jx * self.y_e[i, j]
                 == 0
             )
             m.addConstr(
                 self.z_prime_y[i, j]
-                - data_j["v"][1] * self.z_prime_t[i, j] - self.delta_y[j]
+                - data_j["v"][1] * self.z_prime_t[i, j]
+                - self.delta_y[j]
                 - const_jy * self.y_e[i, j]
                 == 0
             )
-
         self.model = m
 
-    def solve(self) -> List[str]:
+    def solve(self) -> List[int]:
         self.model.optimize()
 
         if self.model.status == GRB.OPTIMAL or self.model.status == GRB.SUBOPTIMAL:
@@ -428,7 +409,8 @@ class MTSPMICPGCS:
                         current_idx = j
                         break
 
-            self.tour = [self.idx_to_name[i] for i in tour_indices]
+            tour_name = [self.idx_to_name[i] for i in tour_indices]
+            print("Tour names: ", tour_name)
 
             visit_points = {}
             p_s_x = sum(
@@ -456,17 +438,26 @@ class MTSPMICPGCS:
 
             self.agent_positions = [visit_points[i]["pos"] for i in tour_indices]
             self.agent_time_points = [visit_points[i]["time"] for i in tour_indices]
-
+            
+            delta_x = [
+                self.delta_x[i].Xn for i in tour_indices
+            ]
+            delta_y = [
+                self.delta_y[i].Xn for i in tour_indices
+            ]
+            print(f"delta_x: {delta_x}")
+            print(f"delta_y: {delta_y}")
+            
+            self.tour = tour_indices
             assert (
                 len(self.tour) == self.n_targets + 2
             ), "Wrong number of targets in the tour!"
 
-            print(f"Best tour: {' -> '.join(self.tour)}")
+            print(f"Best tour: {' -> '.join(tour_name)}")
             print(f"Access time points: {[f'{t:.2f}' for t in self.agent_time_points]}")
             print(
                 f"Access positions: {[f'({p[0]:.2f}, {p[1]:.2f})' for p in self.agent_positions]}"
             )
-
             return self.tour
 
         elif self.model.status == GRB.INFEASIBLE:

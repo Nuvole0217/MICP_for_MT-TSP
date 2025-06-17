@@ -6,26 +6,28 @@ from matplotlib.animation import FuncAnimation, PillowWriter
 from matplotlib.patches import Arrow, Circle
 from numpy.typing import NDArray
 
-from mt_tsp.model import MTSPMICP
+from mt_tsp.model import MTSPMICP, MTSPMICPGCS
 
 
 class Visualizer:
     def __init__(
         self,
-        model: MTSPMICP,
+        model: MTSPMICP | MTSPMICPGCS,
         gif_path: str = "mt_tsp.gif",
         fps: int = 10,
         frames: int = 1000,
         speed_arrow_scale: float = 0.7,
+        length: float = 20,
     ) -> None:
         self.model = model
         self.gif_path = gif_path
         self.fps = fps
         self.speed_arrow_scale = speed_arrow_scale
-        self.times: NDArray[np.float64] = np.linspace(0.0, model.T, frames)
+        self.times: NDArray[np.float64] = np.linspace(0.0, model.max_time, frames)
+        self.length = length
 
         self.tour: List[int] = model.tour
-        self.agent_time_points: List[float] = [model.t[i].Xn for i in self.tour]
+        self.agent_time_points: List[float] = model.agent_time_points
         self.delta_x: List[float] = [model.delta_x[i].Xn for i in self.tour]
         self.delta_y: List[float] = [model.delta_y[i].Xn for i in self.tour]
 
@@ -78,8 +80,8 @@ class Visualizer:
     def animate(self) -> None:
         fig, ax = plt.subplots(figsize=(10, 8), dpi=100)
         ax.set(
-            xlim=(-self.model.square_side * 0.5, self.model.square_side * 1.5),
-            ylim=(-self.model.square_side * 0.5, self.model.square_side * 1.5),
+            xlim=(-self.length * 0.5, self.length * 1.5),
+            ylim=(-self.length * 0.5, self.length * 1.5),
             title=f"MT-TSP Solution (vmax={self.model.vmax})",
             xlabel="X Coordinate",
             ylabel="Y Coordinate",
