@@ -4,5 +4,5 @@ py = 5.0
 
 [param]
 T=1000.0
-vmax=0.5
+vmax=2.0
 R=20

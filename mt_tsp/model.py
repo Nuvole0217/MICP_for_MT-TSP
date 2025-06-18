@@ -199,6 +199,8 @@ class MTSPMICP:
         print(f"Agent time points: {self.agent_time_points}")
         print(f"delta_x: {self.delta_x_list}")
         print(f"delta_y: {self.delta_y_list}")
+        runtime = self.model.Runtime
+        print(f"Runtime: {runtime:.2f} seconds")
         return tour
 
 
@@ -456,6 +458,8 @@ class MTSPMICPGCS:
             print(
                 f"Access positions: {[f'({p[0]:.2f}, {p[1]:.2f})' for p in self.agent_positions]}"
             )
+            runtime = self.model.Runtime
+            print(f"Runtime: {runtime:.2f} seconds")
             return self.tour
 
         elif self.model.status == GRB.INFEASIBLE:
