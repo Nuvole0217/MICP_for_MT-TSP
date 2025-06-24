@@ -30,7 +30,7 @@ def test_mtsp_solution(case_name: str) -> None:
         len(model.agent_time_points) == len(model.targets) + 2
     ), "Agent time points must include depot, all targets once, and return to depot."
 
-    s, s_end = 0, model.N - 1
+    s, s_end = 0, model.nodes - 1
     start_time = model.agent_time_points[s]
     end_time = model.agent_time_points[s_end]
     assert pytest.approx(0.0) == start_time, "Start time must be zero."
@@ -58,7 +58,7 @@ def test_mtsp_solution(case_name: str) -> None:
             tmin <= visit_time <= tmax
         ), f"Visit time for node {node_idx} must lie within its window."
 
-    for i, j in model.E:
+    for i, j in model.edges:
         chosen = y_e[(i, j)].Xn > 0.5
         if chosen:
             t_i = model.t[i].Xn
@@ -71,12 +71,13 @@ def test_mtsp_solution(case_name: str) -> None:
     # check auxiliary bindings and second conic constraints
     print("Check auxiliary bindings and second conic constraints: \n")
     R = math.sqrt(2 * (model.square_side**2))
-    for i, j in model.E:
+    for i, j in model.edges:
         yi = y_e[(i, j)].Xn
         lt_val = model.lt[(i, j)].Xn
         assert (
             lt_val
-            <= model.vmax * (model.t[j].Xn - model.t[i].Xn + model.max_time * (1 - yi)) + 1e-6
+            <= model.vmax * (model.t[j].Xn - model.t[i].Xn + model.max_time * (1 - yi))
+            + 1e-6
         ), f"Time feasibility violated on edge {(i, j)}."
         l_val = model.l[(i, j)].Xn
         expected_l = lt_val + R * (1 - yi)

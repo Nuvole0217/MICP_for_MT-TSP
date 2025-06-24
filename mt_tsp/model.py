@@ -6,6 +6,7 @@ import numpy as np
 from gurobipy import GRB
 from numpy.typing import NDArray
 
+
 class Target:
     def __init__(
         self,
@@ -48,9 +49,9 @@ class MTSPMICP:
 
     def _build_graph(self) -> None:
         self.n_targets: int = len(self.targets)
-        self.N: int = self.n_targets + 2  # 0=s, 1..n targets, n+1=s'
-        self.nodes: List[int] = list(range(self.N))
-        self.E: List[Tuple[int, int]] = [
+        self.nodes: int = self.n_targets + 2  # 0=s, 1..n targets, n+1=s'
+        self.nodes: List[int] = list(range(self.nodes))
+        self.edges: List[Tuple[int, int]] = [
             (i, j) for i in self.nodes for j in self.nodes if i != j
         ]
 
@@ -59,38 +60,38 @@ class MTSPMICP:
 
         # decision variables
         self.t: gp.tupledict[int, gp.Var] = m.addVars(
-            self.N, lb=0.0, ub=self.max_time, name="t"
+            self.nodes, lb=0.0, ub=self.max_time, name="t"
         )
         # TODO: we can set a tighter upperbound for delta_x and delta_y here
         self.delta_x: gp.tupledict[int, gp.Var] = m.addVars(
-            self.N, lb=-self.square_side, ub=self.square_side, name="delta_x"
+            self.nodes, lb=-self.square_side, ub=self.square_side, name="delta_x"
         )
         self.delta_y: gp.tupledict[int, gp.Var] = m.addVars(
-            self.N, lb=-self.square_side, ub=self.square_side, name="delta_y"
+            self.nodes, lb=-self.square_side, ub=self.square_side, name="delta_y"
         )
 
         self.y_e: gp.tupledict[Tuple[Any, ...], gp.Var] = m.addVars(
-            self.E, vtype=GRB.BINARY, name="y_e"
+            self.edges, vtype=GRB.BINARY, name="y_e"
         )
         self.lt: gp.tupledict[Tuple[Any, ...], gp.Var] = m.addVars(
-            self.E, lb=0.0, name="l_tilde"
+            self.edges, lb=0.0, name="l_tilde"
         )
         self.lx: gp.tupledict[Tuple[Any, ...], gp.Var] = m.addVars(
-            self.E, lb=-GRB.INFINITY, name="l_x"
+            self.edges, lb=-GRB.INFINITY, name="l_x"
         )
         self.ly: gp.tupledict[Tuple[Any, ...], gp.Var] = m.addVars(
-            self.E, lb=-GRB.INFINITY, name="l_y"
+            self.edges, lb=-GRB.INFINITY, name="l_y"
         )
         self.l: gp.tupledict[Tuple[Any, ...], gp.Var] = m.addVars(
-            self.E, lb=0.0, name="l"
+            self.edges, lb=0.0, name="l"
         )
 
         # objectives (1)
-        m.setObjective(gp.quicksum(self.lt[e] for e in self.E), GRB.MINIMIZE)
+        m.setObjective(gp.quicksum(self.lt[e] for e in self.edges), GRB.MINIMIZE)
 
         # flow controls for basic tsp problems (2)-(5)
         s: int = 0
-        s_end: int = self.N - 1
+        s_end: int = self.nodes - 1
         m.addConstr(gp.quicksum(self.y_e[(s, j)] for j in range(1, s_end)) == 1)
         m.addConstr(gp.quicksum(self.y_e[(i, s_end)] for i in range(1, s_end)) == 1)
         for k in range(1, s_end):
@@ -102,7 +103,7 @@ class MTSPMICP:
             )
 
         # time windows restrictions (6)
-        for idx in range(1, self.N - 1):
+        for idx in range(1, self.nodes - 1):
             tmin, tmax = self.targets[idx - 1].t_window
             m.addConstr(self.t[idx] >= tmin)
             m.addConstr(self.t[idx] <= tmax)
@@ -112,16 +113,16 @@ class MTSPMICP:
 
         # time feasibility
         m.addConstr(self.t[0] == 0.0)  # initial time t_s = 0
-        m.addConstr(self.t[self.N - 1] >= 0)
-        m.addConstr(self.t[self.N - 1] <= self.max_time)  # end time t_s' <= T
+        m.addConstr(self.t[self.nodes - 1] >= 0)
+        m.addConstr(self.t[self.nodes - 1] <= self.max_time)  # end time t_s' <= T
 
         # add constraints for almost tsp
-        for i in range(self.N):
+        for i in range(self.nodes):
             r_i = 0.0 if i in (s, s_end) else self.targets[i - 1].radius
             m.addQConstr(self.delta_x[i] ** 2 + self.delta_y[i] ** 2 <= r_i**2)
 
         # node relationship
-        for i, j in self.E:
+        for i, j in self.edges:
             if i in (s, s_end):
                 p_i, t_i0 = self.depot, 0.0
                 v_i = np.array([0.0, 0.0], dtype=float)
@@ -154,7 +155,8 @@ class MTSPMICP:
             # time feasibility
             m.addConstr(
                 self.lt[(i, j)]
-                <= self.vmax * (self.t[j] - self.t[i] + self.max_time * (1 - self.y_e[(i, j)]))
+                <= self.vmax
+                * (self.t[j] - self.t[i] + self.max_time * (1 - self.y_e[(i, j)]))
             )
             m.addConstr(
                 self.t[j]
@@ -183,8 +185,8 @@ class MTSPMICP:
         # return the idx list of the solutions
         tour: List[int] = [0]
         current: int = 0
-        while current != self.N - 1:
-            for i, j in self.E:
+        while current != self.nodes - 1:
+            for i, j in self.edges:
                 if i == current and self.y_e[(i, j)].Xn > 0.5:
                     tour.append(j)
                     current = j
@@ -195,7 +197,9 @@ class MTSPMICP:
         self.delta_y_list = [self.delta_y[i].Xn for i in tour]
         assert len(tour) > 0, "There is no feasible solutions, no output for tour!"
         assert len(tour) == len(self.agent_time_points), "Time point mismatch!"
-        assert len(tour) == len(self.targets) + 2, "Not all targets are in the solution!"
+        assert (
+            len(tour) == len(self.targets) + 2
+        ), "Not all targets are in the solution!"
         print(f"Agent time points: {self.agent_time_points}")
         print(f"delta_x: {self.delta_x_list}")
         print(f"delta_y: {self.delta_y_list}")
@@ -234,10 +238,10 @@ class MTSPMICPGCS:
         build the graph (edge, nodes) and preprocessing the node data.
         """
         self.n_targets: int = len(self.targets)
-        self.N: int = self.n_targets + 2
+        self.nodes: int = self.n_targets + 2
 
         self.s_node_idx: int = 0
-        self.s_prime_node_idx: int = self.N - 1
+        self.s_prime_node_idx: int = self.nodes - 1
 
         # build index to name
         self.idx_to_name = {self.s_node_idx: "Depot", self.s_prime_node_idx: "Depot"}
@@ -288,6 +292,7 @@ class MTSPMICPGCS:
         }
 
     def _build_model(self) -> None:
+        isPerspective: bool = True
         m = gp.Model("MT-TSP-MICP-GCS")
 
         self.y_e = m.addVars(self.edges, vtype=GRB.BINARY, name="y_e")
@@ -313,11 +318,47 @@ class MTSPMICPGCS:
             self.edges, vtype=GRB.CONTINUOUS, lb=-GRB.INFINITY, name="ly"
         )
         self.delta_x = m.addVars(
-            self.N, vtype=GRB.CONTINUOUS, lb=-GRB.INFINITY, ub=GRB.INFINITY, name="delta_x"
+            self.nodes,
+            vtype=GRB.CONTINUOUS,
+            lb=-GRB.INFINITY,
+            ub=GRB.INFINITY,
+            name="delta_x",
         )
         self.delta_y = m.addVars(
-            self.N, vtype=GRB.CONTINUOUS, lb=-GRB.INFINITY, ub=GRB.INFINITY, name="delta_y"
+            self.nodes,
+            vtype=GRB.CONTINUOUS,
+            lb=-GRB.INFINITY,
+            ub=GRB.INFINITY,
+            name="delta_y",
         )
+
+        if isPerspective:
+            self.w_x = m.addVars(
+                self.nodes,
+                vtype=GRB.CONTINUOUS,
+                lb=-GRB.INFINITY,
+                ub=GRB.INFINITY,
+                name="w_x",
+            )
+            self.w_y = m.addVars(
+                self.nodes,
+                vtype=GRB.CONTINUOUS,
+                lb=-GRB.INFINITY,
+                ub=GRB.INFINITY,
+                name="w_y",
+            )
+            self.x_pos = m.addVars(
+                self.nodes, vtype=GRB.CONTINUOUS, lb=0.0, ub=GRB.INFINITY, name="x_pos"
+            )
+            self.x_neg = m.addVars(
+                self.nodes, vtype=GRB.CONTINUOUS, lb=0.0, ub=GRB.INFINITY, name="x_neg"
+            )
+            self.y_pos = m.addVars(
+                self.nodes, vtype=GRB.CONTINUOUS, lb=0.0, ub=GRB.INFINITY, name="y_pos"
+            )
+            self.y_neg = m.addVars(
+                self.nodes, vtype=GRB.CONTINUOUS, lb=0.0, ub=GRB.INFINITY, name="y_neg"
+            )
 
         # take objective functions
         m.setObjective(gp.quicksum(self.l[i, j] for i, j in self.edges), GRB.MINIMIZE)
@@ -355,44 +396,77 @@ class MTSPMICPGCS:
             m.addConstr(self.l_x[i, j] ** 2 + self.l_y[i, j] ** 2 <= self.l[i, j] ** 2)
 
             data_i = self.node_data[i]
-            data_j = self.node_data[j]            
+            data_j = self.node_data[j]
             m.addConstr(self.z_t[i, j] >= data_i["t_underline"] * self.y_e[i, j])
             m.addConstr(self.z_t[i, j] <= data_i["t_bar"] * self.y_e[i, j])
             m.addConstr(self.z_prime_t[i, j] >= data_j["t_underline"] * self.y_e[i, j])
             m.addConstr(self.z_prime_t[i, j] <= data_j["t_bar"] * self.y_e[i, j])
 
+            if isPerspective:
+                m.addConstr(self.x_pos[i] <= data_i["radius"] * self.y_e[i, j])
+                m.addConstr(self.x_neg[i] <= data_i["radius"] * self.y_e[i, j])
+                m.addConstr(self.y_pos[i] <= data_i["radius"] * self.y_e[i, j])
+                m.addConstr(self.y_neg[j] <= data_j["radius"] * self.y_e[i, j])
+                m.addConstr(self.w_x[i] == self.x_pos[i] - self.x_neg[i])
+                m.addConstr(self.w_y[i] == self.y_pos[i] - self.y_neg[i])
+
             const_ix = data_i["p_underline"][0] - data_i["t_underline"] * data_i["v"][0]
             const_iy = data_i["p_underline"][1] - data_i["t_underline"] * data_i["v"][1]
-            m.addConstr(
-                self.z_x[i, j]
-                - data_i["v"][0] * self.z_t[i, j]
-                - self.delta_x[i] * self.y_e[i,j]
-                == const_ix* self.y_e[i,j]
-            )
-            m.addConstr(
-                self.z_y[i, j]
-                - data_i["v"][1] * self.z_t[i, j]
-                - self.delta_y[i]
-                == const_iy* self.y_e[i,j]
-            )
+            if not isPerspective:
+                m.addConstr(
+                    self.z_x[i, j]
+                    - data_i["v"][0] * self.z_t[i, j]
+                    - self.delta_x[i] * self.y_e[i, j]
+                    == const_ix * self.y_e[i, j]
+                )
+                m.addConstr(
+                    self.z_y[i, j]
+                    - data_i["v"][1] * self.z_t[i, j]
+                    - self.delta_y[i] * self.y_e[i, j]
+                    == const_iy * self.y_e[i, j]
+                )
+            else:
+                m.addConstr(
+                    self.z_x[i, j] - data_i["v"][0] * self.z_t[i, j] - self.w_x[i]
+                    == const_ix * self.y_e[i, j]
+                )
+                m.addConstr(
+                    self.z_y[i, j] - data_i["v"][1] * self.z_t[i, j] - self.w_y[i]
+                    == const_iy * self.y_e[i, j]
+                )
 
             const_jx = data_j["p_underline"][0] - data_j["t_underline"] * data_j["v"][0]
             const_jy = data_j["p_underline"][1] - data_j["t_underline"] * data_j["v"][1]
-            m.addConstr(
-                self.z_prime_x[i, j]
-                - data_j["v"][0] * self.z_prime_t[i, j]
-                - self.delta_x[j]* self.y_e[i,j]
-                == const_jx* self.y_e[i,j]
-            )
-            m.addConstr(
-                self.z_prime_y[i, j]
-                - data_j["v"][1] * self.z_prime_t[i, j]
-                - self.delta_y[j]* self.y_e[i,j]
-                == const_jy* self.y_e[i,j]
-            )
+            if not isPerspective:
+                m.addConstr(
+                    self.z_prime_x[i, j]
+                    - data_j["v"][0] * self.z_prime_t[i, j]
+                    - self.delta_x[j] * self.y_e[i, j]
+                    == const_jx * self.y_e[i, j]
+                )
+                m.addConstr(
+                    self.z_prime_y[i, j]
+                    - data_j["v"][1] * self.z_prime_t[i, j]
+                    - self.delta_y[j] * self.y_e[i, j]
+                    == const_jy * self.y_e[i, j]
+                )
+            else:
+                m.addConstr(
+                    self.z_prime_x[i, j]
+                    - data_j["v"][0] * self.z_prime_t[i, j]
+                    - self.w_x[j]
+                    == const_jx * self.y_e[i, j]
+                )
+                m.addConstr(
+                    self.z_prime_y[i, j]
+                    - data_j["v"][1] * self.z_prime_t[i, j]
+                    - self.w_y[j]
+                    == const_jy * self.y_e[i, j]
+                )
         self.model = m
 
     def solve(self) -> List[int]:
+        self.model.setParam("MIPGap", 0.1)
         self.model.optimize()
 
         if self.model.status == GRB.OPTIMAL or self.model.status == GRB.SUBOPTIMAL:
@@ -437,13 +511,9 @@ class MTSPMICPGCS:
             self.agent_positions = [visit_points[i]["pos"] for i in tour_indices]
             self.agent_time_points = [visit_points[i]["time"] for i in tour_indices]
             radius_set = [self.node_data[i]["radius"] for i in tour_indices]
-            
-            delta_x = [
-                self.delta_x[i].Xn for i in tour_indices
-            ]
-            delta_y = [
-                self.delta_y[i].Xn for i in tour_indices
-            ]
+
+            delta_x = [self.delta_x[i].Xn for i in tour_indices]
+            delta_y = [self.delta_y[i].Xn for i in tour_indices]
             print(f"delta_x: {delta_x}")
             print(f"delta_y: {delta_y}")
             print(f"radius: {radius_set}")

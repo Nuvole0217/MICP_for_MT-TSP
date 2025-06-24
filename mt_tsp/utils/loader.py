@@ -1,8 +1,11 @@
 import json
 from pathlib import Path
 from typing import List
+
 import tomli
+
 from mt_tsp.model import MTSPMICP, MTSPMICPGCS, Target
+
 
 def load_config(
     target_path: Path, agent_path: Path, choice: int

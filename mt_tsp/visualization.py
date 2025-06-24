@@ -56,7 +56,7 @@ class Visualizer:
                     self.delta_y[i],
                 )
 
-            if to_node == self.model.N - 1:
+            if to_node == self.model.nodes - 1:
                 end_pos = self.model.depot
             else:
                 target = self.model.targets[to_node - 1]

@@ -28,7 +28,9 @@ def run_examples() -> None:
     model = MTSPMICPGCS(targets, depot=(0.0, 4.0), max_time=1000.0, vmax=0.35)
     tour = model.solve()
     print("Tour:", tour)
-    viz = Visualizer(model, gif_path="mt_cetsp_13_targets_example.gif", fps=10, frames=500)
+    viz = Visualizer(
+        model, gif_path="mt_cetsp_13_targets_example.gif", fps=10, frames=500
+    )
     viz.animate()
     print("Saved animation to mt_tsp.gif")
 
