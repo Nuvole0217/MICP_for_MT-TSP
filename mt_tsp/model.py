@@ -292,7 +292,6 @@ class MTSPMICPGCS:
         }
 
     def _build_model(self) -> None:
-        isPerspective: bool = True
         m = gp.Model("MT-TSP-MICP-GCS")
 
         self.y_e = m.addVars(self.edges, vtype=GRB.BINARY, name="y_e")
@@ -331,34 +330,70 @@ class MTSPMICPGCS:
             ub=GRB.INFINITY,
             name="delta_y",
         )
-
-        if isPerspective:
-            self.w_x = m.addVars(
-                self.nodes,
-                vtype=GRB.CONTINUOUS,
-                lb=-GRB.INFINITY,
-                ub=GRB.INFINITY,
-                name="w_x",
-            )
-            self.w_y = m.addVars(
-                self.nodes,
-                vtype=GRB.CONTINUOUS,
-                lb=-GRB.INFINITY,
-                ub=GRB.INFINITY,
-                name="w_y",
-            )
-            self.x_pos = m.addVars(
-                self.nodes, vtype=GRB.CONTINUOUS, lb=0.0, ub=GRB.INFINITY, name="x_pos"
-            )
-            self.x_neg = m.addVars(
-                self.nodes, vtype=GRB.CONTINUOUS, lb=0.0, ub=GRB.INFINITY, name="x_neg"
-            )
-            self.y_pos = m.addVars(
-                self.nodes, vtype=GRB.CONTINUOUS, lb=0.0, ub=GRB.INFINITY, name="y_pos"
-            )
-            self.y_neg = m.addVars(
-                self.nodes, vtype=GRB.CONTINUOUS, lb=0.0, ub=GRB.INFINITY, name="y_neg"
-            )
+        self.delta_x_pos = m.addVars(
+            self.nodes, vtype=GRB.CONTINUOUS, lb=0.0, ub=GRB.INFINITY, name="x_pos"
+        )
+        self.delta_x_neg = m.addVars(
+            self.nodes, vtype=GRB.CONTINUOUS, lb=0.0, ub=GRB.INFINITY, name="x_neg"
+        )
+        self.delta_y_pos = m.addVars(
+            self.nodes, vtype=GRB.CONTINUOUS, lb=0.0, ub=GRB.INFINITY, name="y_pos"
+        )
+        self.delta_y_neg = m.addVars(
+            self.nodes, vtype=GRB.CONTINUOUS, lb=0.0, ub=GRB.INFINITY, name="y_neg"
+        )
+        self.w_x_pos = m.addVars(
+            self.edges,
+            vtype=GRB.CONTINUOUS,
+            lb=0.0,
+            ub=GRB.INFINITY,
+            name="w_x_pos",
+        )
+        self.w_y_pos = m.addVars(
+            self.edges,
+            vtype=GRB.CONTINUOUS,
+            lb=0.0,
+            ub=GRB.INFINITY,
+            name="w_y_pos",
+        )
+        self.w_x_neg = m.addVars(
+            self.edges,
+            vtype=GRB.CONTINUOUS,
+            lb=0.0,
+            ub=GRB.INFINITY,
+            name="w_x_neg",
+        )
+        self.w_y_neg = m.addVars(
+            self.edges, vtype=GRB.CONTINUOUS, lb=0.0, ub=GRB.INFINITY, name="w_y_neg"
+        )
+        self.w_prime_x_pos = m.addVars(
+            self.edges,
+            vtype=GRB.CONTINUOUS,
+            lb=0.0,
+            ub=GRB.INFINITY,
+            name="w_prime_x",
+        )
+        self.w_prime_x_neg = m.addVars(
+            self.edges,
+            vtype=GRB.CONTINUOUS,
+            lb=0.0,
+            ub=GRB.INFINITY,
+            name="w_prime_x_neg",
+        )
+        self.w_prime_y_pos = m.addVars(
+            self.edges,
+            vtype=GRB.CONTINUOUS,
+            lb=0.0,
+            ub=GRB.INFINITY,
+            name="w_prime_y_pos",
+        )
+        self.w_prime_y_neg = m.addVars(
+            self.edges,
+            vtype=GRB.CONTINUOUS,
+            lb=0.0,
+            ub=GRB.INFINITY,
+            name="w_prime_y_neg",
+        )
 
         # take objective functions
         m.setObjective(gp.quicksum(self.l[i, j] for i, j in self.edges), GRB.MINIMIZE)
@@ -381,11 +416,14 @@ class MTSPMICPGCS:
                 gp.quicksum(self.z_prime_t[k, i] for k, j in self.edges if j == i)
                 == gp.quicksum(self.z_t[i, j] for k, j in self.edges if k == i)
             )
-
             m.addConstr(
                 self.delta_x[i] ** 2 + self.delta_y[i] ** 2
                 <= self.node_data[i]["radius"] ** 2
             )
+            m.addConstr(self.delta_x_pos[i] <= self.node_data[i]["radius"])
+            m.addConstr(self.delta_x_neg[i] <= self.node_data[i]["radius"])
+            m.addConstr(self.delta_y_pos[i] <= self.node_data[i]["radius"])
+            m.addConstr(self.delta_y_neg[i] <= self.node_data[i]["radius"])
 
         for i, j in self.edges:
             m.addConstr(self.l_x[i, j] == self.z_prime_x[i, j] - self.z_x[i, j])
@@ -402,67 +440,93 @@ class MTSPMICPGCS:
             m.addConstr(self.z_prime_t[i, j] >= data_j["t_underline"] * self.y_e[i, j])
             m.addConstr(self.z_prime_t[i, j] <= data_j["t_bar"] * self.y_e[i, j])
 
-            if isPerspective:
-                m.addConstr(self.x_pos[i] <= data_i["radius"] * self.y_e[i, j])
-                m.addConstr(self.x_neg[i] <= data_i["radius"] * self.y_e[i, j])
-                m.addConstr(self.y_pos[i] <= data_i["radius"] * self.y_e[i, j])
-                m.addConstr(self.y_neg[j] <= data_j["radius"] * self.y_e[i, j])
-                m.addConstr(self.w_x[i] == self.x_pos[i] - self.x_neg[i])
-                m.addConstr(self.w_y[i] == self.y_pos[i] - self.y_neg[i])
+            m.addConstr(self.delta_x_pos[i] <= data_i["radius"] * self.y_e[i, j])
+            m.addConstr(self.delta_x_neg[i] <= data_i["radius"] * self.y_e[i, j])
+            m.addConstr(self.delta_y_pos[i] <= data_i["radius"] * self.y_e[i, j])
+            m.addConstr(self.delta_y_neg[j] <= data_j["radius"] * self.y_e[i, j])
 
             const_ix = data_i["p_underline"][0] - data_i["t_underline"] * data_i["v"][0]
             const_iy = data_i["p_underline"][1] - data_i["t_underline"] * data_i["v"][1]
-            if not isPerspective:
-                m.addConstr(
-                    self.z_x[i, j]
-                    - data_i["v"][0] * self.z_t[i, j]
-                    - self.delta_x[i] * self.y_e[i, j]
-                    == const_ix * self.y_e[i, j]
-                )
-                m.addConstr(
-                    self.z_y[i, j]
-                    - data_i["v"][1] * self.z_t[i, j]
-                    - self.delta_y[i] * self.y_e[i, j]
-                    == const_iy * self.y_e[i, j]
-                )
-            else:
-                m.addConstr(
-                    self.z_x[i, j] - data_i["v"][0] * self.z_t[i, j] - self.w_x[i]
-                    == const_ix * self.y_e[i, j]
-                )
-                m.addConstr(
-                    self.z_y[i, j] - data_i["v"][1] * self.z_t[i, j] - self.w_y[i]
-                    == const_iy * self.y_e[i, j]
-                )
+            m.addConstr(
+                self.z_x[i, j]
+                - data_i["v"][0] * self.z_t[i, j]
+                - (self.w_x_pos[i, j] - self.w_x_neg[i, j])
+                == const_ix * self.y_e[i, j]
+            )
+            m.addConstr(
+                self.z_y[i, j]
+                - data_i["v"][1] * self.z_t[i, j]
+                - (self.w_y_pos[i, j] - self.w_y_neg[i, j])
+                == const_iy * self.y_e[i, j]
+            )
 
             const_jx = data_j["p_underline"][0] - data_j["t_underline"] * data_j["v"][0]
             const_jy = data_j["p_underline"][1] - data_j["t_underline"] * data_j["v"][1]
-            if not isPerspective:
-                m.addConstr(
-                    self.z_prime_x[i, j]
-                    - data_j["v"][0] * self.z_prime_t[i, j]
-                    - self.delta_x[j] * self.y_e[i, j]
-                    == const_jx * self.y_e[i, j]
-                )
-                m.addConstr(
-                    self.z_prime_y[i, j]
-                    - data_j["v"][1] * self.z_prime_t[i, j]
-                    - self.delta_y[j] * self.y_e[i, j]
-                    == const_jy * self.y_e[i, j]
-                )
-            else:
-                m.addConstr(
-                    self.z_prime_x[i, j]
-                    - data_j["v"][0] * self.z_prime_t[i, j]
-                    - self.w_x[j]
-                    == const_jx * self.y_e[i, j]
-                )
-                m.addConstr(
-                    self.z_prime_y[i, j]
-                    - data_j["v"][1] * self.z_prime_t[i, j]
-                    - self.w_y[j]
-                    == const_jy * self.y_e[i, j]
-                )
+            m.addConstr(
+                self.z_prime_x[i, j]
+                - data_j["v"][0] * self.z_prime_t[i, j]
+                - (self.w_prime_x_pos[i, j] - self.w_prime_x_neg[i, j])
+                == const_jx * self.y_e[i, j]
+            )
+            m.addConstr(
+                self.z_prime_y[i, j]
+                - data_j["v"][1] * self.z_prime_t[i, j]
+                - (self.w_prime_y_pos[i, j] - self.w_prime_y_neg[i, j])
+                == const_jy * self.y_e[i, j]
+            )
+
+            # add constraints for delta_x and delta_y perspective
+            radius_i = data_i["radius"]
+            m.addConstr(self.w_x_pos[i, j] <= radius_i * self.y_e[i, j])
+            m.addConstr(self.w_x_neg[i, j] <= radius_i * self.y_e[i, j])
+            m.addConstr(self.w_y_pos[i, j] <= radius_i * self.y_e[i, j])
+            m.addConstr(self.w_y_neg[i, j] <= radius_i * self.y_e[i, j])
+            m.addConstr(self.w_x_pos[i, j] <= self.delta_x_pos[i])
+            m.addConstr(self.w_x_neg[i, j] <= self.delta_x_neg[i])
+            m.addConstr(self.w_y_pos[i, j] <= self.delta_y_pos[i])
+            m.addConstr(self.w_y_neg[i, j] <= self.delta_y_neg[j])
+            m.addConstr(
+                self.w_x_pos[i, j]
+                >= self.delta_x_pos[i] - radius_i * (1 - self.y_e[i, j])
+            )
+            m.addConstr(
+                self.w_x_neg[i, j]
+                >= self.delta_x_neg[i] - radius_i * (1 - self.y_e[i, j])
+            )
+            m.addConstr(
+                self.w_y_pos[i, j]
+                >= self.delta_y_pos[i] - radius_i * (1 - self.y_e[i, j])
+            )
+            m.addConstr(
+                self.w_y_neg[i, j]
+                >= self.delta_y_neg[j] - radius_i * (1 - self.y_e[i, j])
+            )
+
+            radius_j = data_j["radius"]
+            m.addConstr(self.w_prime_x_pos[i, j] <= radius_j * self.y_e[i, j])
+            m.addConstr(self.w_prime_x_neg[i, j] <= radius_j * self.y_e[i, j])
+            m.addConstr(self.w_prime_y_pos[i, j] <= radius_j * self.y_e[i, j])
+            m.addConstr(self.w_prime_y_neg[i, j] <= radius_j * self.y_e[i, j])
+            m.addConstr(self.w_prime_x_pos[i, j] <= self.delta_x_pos[j])
+            m.addConstr(self.w_prime_x_neg[i, j] <= self.delta_x_neg[j])
+            m.addConstr(self.w_prime_y_pos[i, j] <= self.delta_y_pos[j])
+            m.addConstr(self.w_prime_y_neg[i, j] <= self.delta_y_neg[j])
+            m.addConstr(
+                self.w_prime_x_pos[i, j]
+                >= self.delta_x_pos[j] - radius_j * (1 - self.y_e[i, j])
+            )
+            m.addConstr(
+                self.w_prime_x_neg[i, j]
+                >= self.delta_x_neg[j] - radius_j * (1 - self.y_e[i, j])
+            )
+            m.addConstr(
+                self.w_prime_y_pos[i, j]
+                >= self.delta_y_pos[j] - radius_j * (1 - self.y_e[i, j])
+            )
+            m.addConstr(
+                self.w_prime_y_neg[i, j]
+                >= self.delta_y_neg[j] - radius_j * (1 - self.y_e[i, j])
+            )
         self.model = m
 
     def solve(self) -> List[int]:
