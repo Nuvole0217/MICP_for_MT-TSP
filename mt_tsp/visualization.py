@@ -12,7 +12,8 @@ from mt_tsp.model import MTSPMICP, MTSPMICPGCS
 class Visualizer:
     def __init__(
         self,
-        model: MTSPMICP | MTSPMICPGCS,
+        # model: MTSPMICP | MTSPMICPGCS,
+        model: Any,
         gif_path: str = "mt_tsp.gif",
         fps: int = 10,
         frames: int = 1000,
@@ -28,8 +29,12 @@ class Visualizer:
 
         self.tour: List[int] = model.tour
         self.agent_time_points: List[float] = model.agent_time_points
-        self.delta_x: List[float] = [model.delta_x[i].Xn for i in self.tour]
-        self.delta_y: List[float] = [model.delta_y[i].Xn for i in self.tour]
+        self.delta_x: List[float] = [
+            model.delta_x_pos[i].Xn - model.delta_x_neg[i].Xn for i in self.tour
+        ]
+        self.delta_y: List[float] = [
+            model.delta_y_pos[i].Xn - model.delta_y_neg[i].Xn for i in self.tour
+        ]
 
         # visualization parameters
         self.target_colors = plt.cm.tab10(np.linspace(0, 1, len(model.targets)))

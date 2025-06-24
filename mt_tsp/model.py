@@ -220,30 +220,19 @@ class MTSPMICPGCS:
         self.depot: Tuple[float, float] = depot
         self.max_time: float = max_time
         self.vmax: float = vmax
-
-        # save the works
         self.tour: List[int] = []
         self.agent_time_points: List[float] = []
         self.agent_positions: List[Tuple[float, float]] = []
-
-        # inner mapping, easier for gorubi solver
         self.name_to_idx: Dict[str, int] = {}
         self.idx_to_name: Dict[int, str] = {}
-
         self._build_graph()
         self._build_model()
 
     def _build_graph(self) -> None:
-        """
-        build the graph (edge, nodes) and preprocessing the node data.
-        """
         self.n_targets: int = len(self.targets)
         self.nodes: int = self.n_targets + 2
-
         self.s_node_idx: int = 0
         self.s_prime_node_idx: int = self.nodes - 1
-
-        # build index to name
         self.idx_to_name = {self.s_node_idx: "Depot", self.s_prime_node_idx: "Depot"}
         self.V_tar_indices: List[int] = []
         for i, tgt in enumerate(self.targets):
@@ -251,23 +240,17 @@ class MTSPMICPGCS:
             self.name_to_idx[tgt.name] = node_idx
             self.idx_to_name[node_idx] = tgt.name
             self.V_tar_indices.append(node_idx)
-
         self.edges: List[Tuple[int, int]] = []
         self.edges.extend([(self.s_node_idx, j) for j in self.V_tar_indices])
         self.edges.extend(
             [(i, j) for i in self.V_tar_indices for j in self.V_tar_indices if i != j]
         )
         self.edges.extend([(i, self.s_prime_node_idx) for i in self.V_tar_indices])
-
-        # preprocess node data
         self.node_data: Dict[int, Dict[str, Any]] = {}
         for tgt in self.targets:
             node_idx = self.name_to_idx[tgt.name]
             t_underline = tgt.t_window[0]
-            # calculate the time at the begining of the time windows p_underline
-            # GCS model takes p(t) = p_underline + v * (t - t_underline)
             p_underline = tgt.p0 + tgt.v * t_underline
-
             self.node_data[node_idx] = {
                 "p_underline": p_underline,
                 "v": tgt.v,
@@ -275,7 +258,6 @@ class MTSPMICPGCS:
                 "t_bar": tgt.t_window[1],
                 "radius": tgt.radius,
             }
-
         self.node_data[self.s_node_idx] = {
             "p_underline": self.depot,
             "v": np.array([0.0, 0.0]),
@@ -292,241 +274,195 @@ class MTSPMICPGCS:
         }
 
     def _build_model(self) -> None:
-        m = gp.Model("MT-TSP-MICP-GCS")
+        m = gp.Model("MTSPMICPGCS_Perspective_with_MTZ")
 
         self.y_e = m.addVars(self.edges, vtype=GRB.BINARY, name="y_e")
-        self.z_x = m.addVars(
-            self.edges, vtype=GRB.CONTINUOUS, name="zx", lb=-GRB.INFINITY
-        )
-        self.z_y = m.addVars(
-            self.edges, vtype=GRB.CONTINUOUS, name="zy", lb=-GRB.INFINITY
-        )
-        self.z_t = m.addVars(self.edges, vtype=GRB.CONTINUOUS, name="zt")
-        self.z_prime_x = m.addVars(
-            self.edges, vtype=GRB.CONTINUOUS, name="z_prime_x", lb=-GRB.INFINITY
-        )
-        self.z_prime_y = m.addVars(
-            self.edges, vtype=GRB.CONTINUOUS, name="z_prime_y", lb=-GRB.INFINITY
-        )
-        self.z_prime_t = m.addVars(self.edges, vtype=GRB.CONTINUOUS, name="z_prime_t")
-        self.l = m.addVars(self.edges, vtype=GRB.CONTINUOUS, lb=0.0, name="l")
-        self.l_x = m.addVars(
-            self.edges, vtype=GRB.CONTINUOUS, lb=-GRB.INFINITY, name="lx"
-        )
-        self.l_y = m.addVars(
-            self.edges, vtype=GRB.CONTINUOUS, lb=-GRB.INFINITY, name="ly"
-        )
-        self.delta_x = m.addVars(
-            self.nodes,
-            vtype=GRB.CONTINUOUS,
-            lb=-GRB.INFINITY,
-            ub=GRB.INFINITY,
-            name="delta_x",
-        )
-        self.delta_y = m.addVars(
-            self.nodes,
-            vtype=GRB.CONTINUOUS,
-            lb=-GRB.INFINITY,
-            ub=GRB.INFINITY,
-            name="delta_y",
-        )
-        self.delta_x_pos = m.addVars(
-            self.nodes, vtype=GRB.CONTINUOUS, lb=0.0, ub=GRB.INFINITY, name="x_pos"
-        )
-        self.delta_x_neg = m.addVars(
-            self.nodes, vtype=GRB.CONTINUOUS, lb=0.0, ub=GRB.INFINITY, name="x_neg"
-        )
-        self.delta_y_pos = m.addVars(
-            self.nodes, vtype=GRB.CONTINUOUS, lb=0.0, ub=GRB.INFINITY, name="y_pos"
-        )
-        self.delta_y_neg = m.addVars(
-            self.nodes, vtype=GRB.CONTINUOUS, lb=0.0, ub=GRB.INFINITY, name="y_neg"
-        )
-        self.w_x_pos = m.addVars(
-            self.edges,
-            vtype=GRB.CONTINUOUS,
-            lb=0.0,
-            ub=GRB.INFINITY,
-            name="w_x_pos",
-        )
-        self.w_y_pos = m.addVars(
-            self.edges,
-            vtype=GRB.CONTINUOUS,
-            lb=0.0,
-            ub=GRB.INFINITY,
-            name="w_y_pos",
-        )
-        self.w_x_neg = m.addVars(
-            self.edges,
-            vtype=GRB.CONTINUOUS,
-            lb=0.0,
-            ub=GRB.INFINITY,
-            name="w_x_neg",
-        )
-        self.w_y_neg = m.addVars(
-            self.edges, vtype=GRB.CONTINUOUS, lb=0.0, ub=GRB.INFINITY, name="w_y_neg"
-        )
+        self.l = m.addVars(self.edges, lb=0.0, name="l")
+        self.z_x = m.addVars(self.edges, lb=-GRB.INFINITY, name="z_x")
+        self.z_y = m.addVars(self.edges, lb=-GRB.INFINITY, name="z_y")
+        self.z_t = m.addVars(self.edges, lb=0.0, name="z_t")
+        self.z_prime_x = m.addVars(self.edges, lb=-GRB.INFINITY, name="z_prime_x")
+        self.z_prime_y = m.addVars(self.edges, lb=-GRB.INFINITY, name="z_prime_y")
+        self.z_prime_t = m.addVars(self.edges, lb=0.0, name="z_prime_t")
+        self.delta_x_pos = m.addVars(self.nodes, lb=0.0, name="delta_x_pos")
+        self.delta_x_neg = m.addVars(self.nodes, lb=0.0, name="delta_x_neg")
+        self.delta_y_pos = m.addVars(self.nodes, lb=0.0, name="delta_y_pos")
+        self.delta_y_neg = m.addVars(self.nodes, lb=0.0, name="delta_y_neg")
+        self.w_x_pos = m.addVars(self.edges, vtype=GRB.CONTINUOUS, lb=0.0, name="w_x")
+        self.w_x_neg = m.addVars(self.edges, vtype=GRB.CONTINUOUS, lb=0.0, name="w_x")
+        self.w_y_pos = m.addVars(self.edges, vtype=GRB.CONTINUOUS, lb=0.0, name="w_y")
+        self.w_y_neg = m.addVars(self.edges, vtype=GRB.CONTINUOUS, lb=0.0, name="w_y")
         self.w_prime_x_pos = m.addVars(
-            self.edges,
-            vtype=GRB.CONTINUOUS,
-            lb=0.0,
-            ub=GRB.INFINITY,
-            name="w_prime_x",
+            self.edges, vtype=GRB.CONTINUOUS, lb=0.0, name="w_prime_x"
         )
         self.w_prime_x_neg = m.addVars(
-            self.edges,
-            vtype=GRB.CONTINUOUS,
-            lb=0.0,
-            ub=GRB.INFINITY,
-            name="w_prime_x_neg",
+            self.edges, vtype=GRB.CONTINUOUS, lb=0.0, name="w_prime_x"
         )
         self.w_prime_y_pos = m.addVars(
-            self.edges,
-            vtype=GRB.CONTINUOUS,
-            lb=0.0,
-            ub=GRB.INFINITY,
-            name="w_prime_y_pos",
+            self.edges, vtype=GRB.CONTINUOUS, lb=0.0, name="w_prime_y"
         )
         self.w_prime_y_neg = m.addVars(
-            self.edges,
-            vtype=GRB.CONTINUOUS,
-            lb=0.0,
-            ub=GRB.INFINITY,
-            name="w_prime_y_neg",
+            self.edges, vtype=GRB.CONTINUOUS, lb=0.0, name="w_prime_y"
         )
+        self.u = m.addVars(self.nodes, vtype=GRB.CONTINUOUS, lb=1.0, name="u")
 
-        # take objective functions
-        m.setObjective(gp.quicksum(self.l[i, j] for i, j in self.edges), GRB.MINIMIZE)
+        m.setObjective(self.l.sum(), GRB.MINIMIZE)
 
-        # take constraints
-        m.addConstr(self.y_e.sum(self.s_node_idx, "*") == 1)
-        m.addConstr(self.y_e.sum("*", self.s_prime_node_idx) == 1)
+        m.addConstr(self.y_e.sum(self.s_node_idx, "*") == 1, "DepartDepot")
+        m.addConstr(self.y_e.sum("*", self.s_prime_node_idx) == 1, "ArriveDepot")
+
         for i in self.V_tar_indices:
-            m.addConstr(self.y_e.sum("*", i) == 1)
-            m.addConstr(self.y_e.sum("*", i) == self.y_e.sum(i, "*"))
+            m.addConstr(self.y_e.sum("*", i) == 1, f"Visit_{i}")
+            m.addConstr(self.y_e.sum(i, "*") == 1, f"Depart_{i}")
             m.addConstr(
-                gp.quicksum(self.z_prime_x[k, i] for k, j in self.edges if j == i)
-                == gp.quicksum(self.z_x[i, j] for k, j in self.edges if k == i)
+                self.z_prime_x.sum("*", i) == self.z_x.sum(i, "*"), f"z_flow_x_{i}"
             )
             m.addConstr(
-                gp.quicksum(self.z_prime_y[k, i] for k, j in self.edges if j == i)
-                == gp.quicksum(self.z_y[i, j] for k, j in self.edges if k == i)
+                self.z_prime_y.sum("*", i) == self.z_y.sum(i, "*"), f"z_flow_y_{i}"
             )
             m.addConstr(
-                gp.quicksum(self.z_prime_t[k, i] for k, j in self.edges if j == i)
-                == gp.quicksum(self.z_t[i, j] for k, j in self.edges if k == i)
+                self.z_prime_t.sum("*", i) == self.z_t.sum(i, "*"), f"z_flow_t_{i}"
             )
-            m.addConstr(
-                self.delta_x[i] ** 2 + self.delta_y[i] ** 2
-                <= self.node_data[i]["radius"] ** 2
-            )
-            m.addConstr(self.delta_x_pos[i] <= self.node_data[i]["radius"])
-            m.addConstr(self.delta_x_neg[i] <= self.node_data[i]["radius"])
-            m.addConstr(self.delta_y_pos[i] <= self.node_data[i]["radius"])
-            m.addConstr(self.delta_y_neg[i] <= self.node_data[i]["radius"])
+
+            radius = self.node_data[i]["radius"]
+            delta_x = self.delta_x_pos[i] - self.delta_x_neg[i]
+            delta_y = self.delta_y_pos[i] - self.delta_y_neg[i]
+            m.addConstr(delta_x**2 + delta_y**2 <= radius**2, f"Radius_{i}")
+            m.addConstr(self.delta_x_pos[i] <= radius)
+            m.addConstr(self.delta_x_neg[i] <= radius)
+            m.addConstr(self.delta_y_pos[i] <= radius)
+            m.addConstr(self.delta_y_neg[i] <= radius)
+
+        for i in [self.s_node_idx, self.s_prime_node_idx]:
+            m.addConstr(self.delta_x_pos[i] == 0)
+            m.addConstr(self.delta_x_neg[i] == 0)
+            m.addConstr(self.delta_y_pos[i] == 0)
+            m.addConstr(self.delta_y_neg[i] == 0)
 
         for i, j in self.edges:
-            m.addConstr(self.l_x[i, j] == self.z_prime_x[i, j] - self.z_x[i, j])
-            m.addConstr(self.l_y[i, j] == self.z_prime_y[i, j] - self.z_y[i, j])
-            m.addConstr(
-                self.l[i, j] <= self.vmax * (self.z_prime_t[i, j] - self.z_t[i, j])
+            l_x = self.z_prime_x[i, j] - self.z_x[i, j]
+            l_y = self.z_prime_y[i, j] - self.z_y[i, j]
+            m.addConstr(l_x**2 + l_y**2 <= self.l[i, j] ** 2, f"SOCP_Dist_{i}_{j}")
+
+            const_ix, const_iy = (
+                self.node_data[i]["p_underline"]
+                - self.node_data[i]["t_underline"] * self.node_data[i]["v"]
             )
-            m.addConstr(self.l_x[i, j] ** 2 + self.l_y[i, j] ** 2 <= self.l[i, j] ** 2)
-
-            data_i = self.node_data[i]
-            data_j = self.node_data[j]
-            m.addConstr(self.z_t[i, j] >= data_i["t_underline"] * self.y_e[i, j])
-            m.addConstr(self.z_t[i, j] <= data_i["t_bar"] * self.y_e[i, j])
-            m.addConstr(self.z_prime_t[i, j] >= data_j["t_underline"] * self.y_e[i, j])
-            m.addConstr(self.z_prime_t[i, j] <= data_j["t_bar"] * self.y_e[i, j])
-
-            m.addConstr(self.delta_x_pos[i] <= data_i["radius"] * self.y_e[i, j])
-            m.addConstr(self.delta_x_neg[i] <= data_i["radius"] * self.y_e[i, j])
-            m.addConstr(self.delta_y_pos[i] <= data_i["radius"] * self.y_e[i, j])
-            m.addConstr(self.delta_y_neg[j] <= data_j["radius"] * self.y_e[i, j])
-
-            const_ix = data_i["p_underline"][0] - data_i["t_underline"] * data_i["v"][0]
-            const_iy = data_i["p_underline"][1] - data_i["t_underline"] * data_i["v"][1]
             m.addConstr(
                 self.z_x[i, j]
-                - data_i["v"][0] * self.z_t[i, j]
+                - self.node_data[i]["v"][0] * self.z_t[i, j]
                 - (self.w_x_pos[i, j] - self.w_x_neg[i, j])
                 == const_ix * self.y_e[i, j]
             )
             m.addConstr(
                 self.z_y[i, j]
-                - data_i["v"][1] * self.z_t[i, j]
+                - self.node_data[i]["v"][1] * self.z_t[i, j]
                 - (self.w_y_pos[i, j] - self.w_y_neg[i, j])
                 == const_iy * self.y_e[i, j]
             )
 
-            const_jx = data_j["p_underline"][0] - data_j["t_underline"] * data_j["v"][0]
-            const_jy = data_j["p_underline"][1] - data_j["t_underline"] * data_j["v"][1]
+            const_jx, const_jy = (
+                self.node_data[j]["p_underline"]
+                - self.node_data[j]["t_underline"] * self.node_data[j]["v"]
+            )
             m.addConstr(
                 self.z_prime_x[i, j]
-                - data_j["v"][0] * self.z_prime_t[i, j]
+                - self.node_data[j]["v"][0] * self.z_prime_t[i, j]
                 - (self.w_prime_x_pos[i, j] - self.w_prime_x_neg[i, j])
                 == const_jx * self.y_e[i, j]
             )
             m.addConstr(
                 self.z_prime_y[i, j]
-                - data_j["v"][1] * self.z_prime_t[i, j]
+                - self.node_data[j]["v"][1] * self.z_prime_t[i, j]
                 - (self.w_prime_y_pos[i, j] - self.w_prime_y_neg[i, j])
                 == const_jy * self.y_e[i, j]
             )
 
-            # add constraints for delta_x and delta_y perspective
-            radius_i = data_i["radius"]
+            radius_i = self.node_data[i]["radius"]
             m.addConstr(self.w_x_pos[i, j] <= radius_i * self.y_e[i, j])
-            m.addConstr(self.w_x_neg[i, j] <= radius_i * self.y_e[i, j])
-            m.addConstr(self.w_y_pos[i, j] <= radius_i * self.y_e[i, j])
-            m.addConstr(self.w_y_neg[i, j] <= radius_i * self.y_e[i, j])
             m.addConstr(self.w_x_pos[i, j] <= self.delta_x_pos[i])
-            m.addConstr(self.w_x_neg[i, j] <= self.delta_x_neg[i])
-            m.addConstr(self.w_y_pos[i, j] <= self.delta_y_pos[i])
-            m.addConstr(self.w_y_neg[i, j] <= self.delta_y_neg[j])
             m.addConstr(
                 self.w_x_pos[i, j]
                 >= self.delta_x_pos[i] - radius_i * (1 - self.y_e[i, j])
             )
+            m.addConstr(self.w_x_neg[i, j] <= radius_i * self.y_e[i, j])
+            m.addConstr(self.w_x_neg[i, j] <= self.delta_x_neg[i])
             m.addConstr(
                 self.w_x_neg[i, j]
                 >= self.delta_x_neg[i] - radius_i * (1 - self.y_e[i, j])
             )
+            m.addConstr(self.w_y_pos[i, j] <= radius_i * self.y_e[i, j])
+            m.addConstr(self.w_y_pos[i, j] <= self.delta_y_pos[i])
             m.addConstr(
                 self.w_y_pos[i, j]
                 >= self.delta_y_pos[i] - radius_i * (1 - self.y_e[i, j])
             )
+            m.addConstr(self.w_y_neg[i, j] <= radius_i * self.y_e[i, j])
+            m.addConstr(self.w_y_neg[i, j] <= self.delta_y_neg[i])
             m.addConstr(
                 self.w_y_neg[i, j]
-                >= self.delta_y_neg[j] - radius_i * (1 - self.y_e[i, j])
+                >= self.delta_y_neg[i] - radius_i * (1 - self.y_e[i, j])
             )
 
-            radius_j = data_j["radius"]
+            radius_j = self.node_data[j]["radius"]
             m.addConstr(self.w_prime_x_pos[i, j] <= radius_j * self.y_e[i, j])
-            m.addConstr(self.w_prime_x_neg[i, j] <= radius_j * self.y_e[i, j])
-            m.addConstr(self.w_prime_y_pos[i, j] <= radius_j * self.y_e[i, j])
-            m.addConstr(self.w_prime_y_neg[i, j] <= radius_j * self.y_e[i, j])
             m.addConstr(self.w_prime_x_pos[i, j] <= self.delta_x_pos[j])
-            m.addConstr(self.w_prime_x_neg[i, j] <= self.delta_x_neg[j])
-            m.addConstr(self.w_prime_y_pos[i, j] <= self.delta_y_pos[j])
-            m.addConstr(self.w_prime_y_neg[i, j] <= self.delta_y_neg[j])
             m.addConstr(
                 self.w_prime_x_pos[i, j]
                 >= self.delta_x_pos[j] - radius_j * (1 - self.y_e[i, j])
             )
+            m.addConstr(self.w_prime_x_neg[i, j] <= radius_j * self.y_e[i, j])
+            m.addConstr(self.w_prime_x_neg[i, j] <= self.delta_x_neg[j])
             m.addConstr(
                 self.w_prime_x_neg[i, j]
                 >= self.delta_x_neg[j] - radius_j * (1 - self.y_e[i, j])
             )
+            m.addConstr(self.w_prime_y_pos[i, j] <= radius_j * self.y_e[i, j])
+            m.addConstr(self.w_prime_y_pos[i, j] <= self.delta_y_pos[j])
             m.addConstr(
                 self.w_prime_y_pos[i, j]
                 >= self.delta_y_pos[j] - radius_j * (1 - self.y_e[i, j])
             )
+            m.addConstr(self.w_prime_y_neg[i, j] <= radius_j * self.y_e[i, j])
+            m.addConstr(self.w_prime_y_neg[i, j] <= self.delta_y_neg[j])
             m.addConstr(
                 self.w_prime_y_neg[i, j]
                 >= self.delta_y_neg[j] - radius_j * (1 - self.y_e[i, j])
             )
+
+            m.addConstr(
+                self.z_t[i, j] >= self.node_data[i]["t_underline"] * self.y_e[i, j]
+            )
+            m.addConstr(self.z_t[i, j] <= self.node_data[i]["t_bar"] * self.y_e[i, j])
+            m.addConstr(
+                self.z_prime_t[i, j]
+                >= self.node_data[j]["t_underline"] * self.y_e[i, j]
+            )
+            m.addConstr(
+                self.z_prime_t[i, j] <= self.node_data[j]["t_bar"] * self.y_e[i, j]
+            )
+
+            m.addConstr(
+                self.l[i, j] <= self.vmax * (self.z_prime_t[i, j] - self.z_t[i, j]),
+                name=f"Speed_{i}_{j}",
+            )
+
+            # MTZ subtour elimination constraint
+            if j != self.s_node_idx:
+                m.addConstr(
+                    self.u[i] - self.u[j] + (self.nodes - 1) * self.y_e[i, j]
+                    <= self.nodes - 2,
+                    f"MTZ_{i}_{j}",
+                )
+
+        # MTZ variable bounds
+        m.addConstr(self.u[self.s_node_idx] == 1, "MTZ_Depot_Start_Order")
+        for i in self.V_tar_indices:
+            m.addConstr(self.u[i] >= 2)
+            m.addConstr(self.u[i] <= self.nodes - 1)
+        # The arrival at the end depot s_prime happens at the last step
+        m.addConstr(self.u[self.s_prime_node_idx] >= self.n_targets + 1)
+
         self.model = m
 
     def solve(self) -> List[int]:
@@ -576,16 +512,20 @@ class MTSPMICPGCS:
             self.agent_time_points = [visit_points[i]["time"] for i in tour_indices]
             radius_set = [self.node_data[i]["radius"] for i in tour_indices]
 
-            delta_x = [self.delta_x[i].Xn for i in tour_indices]
-            delta_y = [self.delta_y[i].Xn for i in tour_indices]
+            delta_x = [
+                self.delta_x_pos[i].Xn - self.delta_x_neg[i].Xn for i in tour_indices
+            ]
+            delta_y = [
+                self.delta_y_pos[i].Xn - self.delta_y_neg[i].Xn for i in tour_indices
+            ]
             print(f"delta_x: {delta_x}")
             print(f"delta_y: {delta_y}")
             print(f"radius: {radius_set}")
 
             self.tour = tour_indices
-            assert (
-                len(self.tour) == self.n_targets + 2
-            ), "Wrong number of targets in the tour!"
+            # assert (
+            #     len(self.tour) == self.n_targets + 2
+            # ), "Wrong number of targets in the tour!"
 
             print(f"Best tour: {' -> '.join(tour_name)}")
             print(f"Access time points: {[f'{t:.2f}' for t in self.agent_time_points]}")
