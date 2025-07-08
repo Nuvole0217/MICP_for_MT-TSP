@@ -288,7 +288,7 @@ class MTSPMICPGCS:
         self.beta_y = m.addVars(self.edges, lb=-GRB.INFINITY, name="beta_y")
         self.beta_prime_x = m.addVars(self.edges, lb=-GRB.INFINITY, name="beta_prime_x")
         self.beta_prime_y = m.addVars(self.edges, lb=-GRB.INFINITY, name="beta_prime_y")
-        self.u = m.addVars(self.nodes, vtype=GRB.CONTINUOUS, lb=1.0, name="u")
+        # self.u = m.addVars(self.nodes, vtype=GRB.CONTINUOUS, lb=1.0, name="u")
 
         m.setObjective(self.l.sum(), GRB.MINIMIZE)
 
